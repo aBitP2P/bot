@@ -25,8 +25,7 @@ export async function releaseCommand(ctx: CommandContext) {
   const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
   const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
 
-  const isMockBypass = orderId.startsWith("mock") && isAdmin(userId);
-  if (userId !== sellerId && !isMockBypass) return ctx.reply(dict.onlySeller);
+  if (userId !== sellerId) return ctx.reply(dict.onlySeller);
 
   const didRelease = await tryTransitionOrderStatus(
     orderId,

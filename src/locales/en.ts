@@ -76,26 +76,19 @@ export default {
         minute: "2-digit",
       });
 
-      const rows: [string, string][] = [
-        ["Order", o.id],
-        ["Type", typeLabel],
-        ["Fiat", o.fiatCode],
-        ["Amount", `${o.amountFiat} ${o.fiatCode}`],
-        ["Method", o.paymentMethod],
-        ["Margin", marginLabel],
-        ["Status", statusLabel],
-        ["Created", createdDate],
-      ];
-
-      const maxLabel = Math.max(...rows.map(([label]) => label.length));
-      const lines = rows.map(
-        ([label, value]) => `${label.padEnd(maxLabel)} : ${value}`,
-      );
-
-      return "```\n" + lines.join("\n") + "\n```";
+      return [
+        `📄 Order: \`${o.id}\``,
+        `Type: \`${typeLabel}\``,
+        `Fiat: \`${o.fiatCode}\``,
+        `Amount: \`${o.fiatAmountLocked ?? o.amountFiat} ${o.fiatCode}\``,
+        `Method: \`${o.paymentMethod}\``,
+        `Margin: \`${marginLabel}\``,
+        `Status: \`${statusLabel}\``,
+        `Created at: \`${createdDate}\``,
+      ].join("\n");
     });
 
-    return blocks.join("\n\n");
+    return blocks.join("\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n");
   },
 
   buyType: "🟢 Buy",

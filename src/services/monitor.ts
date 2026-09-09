@@ -6,6 +6,7 @@ import { dictionaries, type Language } from "../locales/index.js";
 import { Telegraf } from "telegraf";
 import { type BotContext } from "../types.js";
 import { getUser } from "../db/users.js";
+import { tryTransitionOrderStatus } from "../db/orders.js";
 
 export function startEscrowMonitor(bot: Telegraf<BotContext>) {
   setInterval(async () => {
@@ -53,10 +54,14 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
 
       // 2. Transacción Confirmada (1-conf)
       if (fundingInfo.confirmed && order.status !== "ACTIVE") {
-        await db
-          .update(orders)
-          .set({ status: "ACTIVE", fundingTxid: fundingInfo.txid })
-          .where(eq(orders.id, order.id));
+        const didTransition = await tryTransitionOrderStatus(
+            order.id, 
+            ["WAITING_ESCROW", "UNCONFIRMED"], 
+            "ACTIVE", 
+            { fundingTxid: fundingInfo.txid }
+        );
+
+        if (!didTransition) continue;
 
         const isCreatorSelling = order.type === "SELL";
         const sellerId = isCreatorSelling ? order.creatorId : order.takerId;

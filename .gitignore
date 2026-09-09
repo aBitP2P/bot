@@ -6,3 +6,4 @@ sqlite.db
 *.zip
 *.txt
 dist/
+repomix-output.xml

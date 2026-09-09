@@ -9,8 +9,9 @@ export const network = process.env.NETWORK === 'testnet'
   ? bitcoin.networks.testnet
   : bitcoin.networks.bitcoin;
 
-export const mempoolBaseURL = process.env.MEMPOOL_BASE_URL ?? mempoolURLs[process.env.NETWORK || 'testnet'];
+export const mempoolAPIBaseURL = process.env.MEMPOOL_API_BASE_URL ?? mempoolURLs[process.env.NETWORK || 'testnet'];
+export const mempoolBaseURL = mempoolAPIBaseURL?.replace(/\/api$/, "");
 
 export function getMempoolApiPath(path: string) {
-  return mempoolBaseURL + (path.startsWith('/') ? path : '/' + path);
+  return mempoolAPIBaseURL + (path.startsWith('/') ? path : '/' + path);
 }

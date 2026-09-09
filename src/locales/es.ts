@@ -1,4 +1,5 @@
 import type { orders } from "../db/schema.js";
+import { mempoolBaseURL } from "../utils/network.js";
 
 type OrderRow = typeof orders.$inferSelect;
 
@@ -26,7 +27,7 @@ export default {
     "❌ **Requiere nombre de usuario**\n\nNecesitas configurar un @username de Telegram para interactuar con este bot. Ve a *Ajustes > Nombre de usuario*, configúralo y vuelve a intentarlo.",
   cancelled: "❌ Proceso cancelado.",
   missingPubkeys:
-    "❌ Error crítico: Faltan llaves públicas para generar el Escrow.",
+    "❌ Error crítico: Faltan llaves públicas para generar el escrow.",
   btnBuyBitcoin: "Comprar Bitcoin",
   btnSellBitcoin: "Vender Bitcoin",
   orderPublishedSuccess: (orderId: string) =>
@@ -52,7 +53,8 @@ export default {
     `/dispute — Abrir disputa con moderación\n` +
     `_Ej: /release ab12cd-34ef56_\n\n` +
     `⚙️ *Cuenta y Sistema*\n` +
-    `/setpass — Configurar billetera y contraseña\n` +
+    `/setpass — Encripta tu perfil a partir de una contraseña\n` +
+    `/setlang — Cambia de idioma, ej: /setlang EN\n` +
     `/exit — Cancelar la acción actual\n\n` +
     `📢 Canal: @aBitP2PExchange\n` +
     `💬 Grupo: @aBitP2PGeneral\\_es`,
@@ -241,14 +243,14 @@ export default {
   waitMaker:
     "⏳ Perfecto. Por favor, *espera a que la contraparte confirme* si desea continuar con la orden.",
   waitTaker:
-    "⏳ Dirección guardada. Ahora *espera a que el vendedor deposite* los fondos en el Escrow.",
-  acceptedNowWaitingEscrow: `✅ *Orden aceptada.*\n\n⏳ Esperando a que el vendedor envíe los fondos al Escrow, puede tomar varios minutos...`,
+    "⏳ Dirección guardada. Ahora *espera a que el vendedor deposite* los fondos en el escrow.",
+  acceptedNowWaitingEscrow: `✅ *Orden aceptada.*\n\n⏳ Esperando a que el vendedor envíe los fondos al escrow, puede tomar varios minutos...`,
 
   askSellerEscrow: (sats: number, address: string) =>
-    `⚡ *Fondeo de Escrow Requerido*\n\n` +
+    `⚡ *Fondeo de escrow Requerido*\n\n` +
     `Por favor, envía \`${sats / 100_000_000}\` BTC a la siguiente dirección on-chain:\n\n` +
     `\`${address}\`\n\n` +
-    `_Una vez se confirme la transacción (1 conf), los pondremos en contacto._`,
+    `_Una vez se confirme la transacción (1 conf), los pondremos en contacto. Por favor, asegurate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
 
   escrowUnconfirmed: (txid: string) =>
     `⏳ *Transacción detectada en la red.*\n\n` +
@@ -273,7 +275,7 @@ export default {
 
   releaseToBuyer: (orderId: string) =>
     `🎉 *¡El vendedor ha liberado los fondos!*\n\n` +
-    `El Escrow está listo para ser reclamado. Ejecuta el siguiente comando para iniciar el retiro a tu billetera:\n\n` +
+    `El escrow está listo para ser reclamado. Ejecuta el siguiente comando para iniciar el retiro a tu billetera:\n\n` +
     `\`/claim ${orderId}\``,
 
   fiatSentToBuyer: (orderId: string) =>
@@ -334,10 +336,10 @@ export default {
     "❌ Esa dirección de Bitcoin no es válida. Por favor, envía una dirección correcta:",
 
   refundSuccess: (txid: string) =>
-    `🎉 *¡Reembolso Exitoso!*\n\nTus fondos van de vuelta a tu billetera.\n🔎 [Ver TX](https://mempool.space/testnet4/tx/${txid})`,
+    `🎉 *¡Reembolso Exitoso!*\n\nTus fondos van de vuelta a tu billetera.\n🔎 [Ver TX](${mempoolBaseURL}/tx/${txid})`,
 
   refundCompletedNotification: (orderId: string) =>
-    `ℹ️ *Orden Cancelada*\n\nEl vendedor reclamó el reembolso de la orden \`${orderId}\`. Los fondos del Escrow fueron devueltos.`,
+    `ℹ️ *Orden Cancelada*\n\nEl vendedor reclamó el reembolso de la orden \`${orderId}\`. Los fondos del escrow fueron devueltos.`,
 
   promptPassword:
     `` +
@@ -346,7 +348,7 @@ export default {
     "👀 El equipo de aBit no se hace responsable de la pérdida de esta.\n\n" +
     "🔑 Por favor, escribe tu contraseña para configurar tu usuario: ",
   passwordAlreadySet: "❌ Ya tienes una contraseña establecida previamente.",
-  passwordSetSuccess: `✅ *Contraseña configurada con éxito.* Billetera encriptada y lista.\n\n` + 
+  passwordSetSuccess: `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.\n\n` + 
     "_Ten en centa que solo es para uso del bot. Los fondos que compres, se enviarán a cualquier dirección que desees al momento, el bot no custodia en ningún momento los fondos de manera directa._",
   cancelRequestSuccess: `✅ Has solicitado la cancelación. Esperando a que tu contraparte la apruebe con /cancel.`,
   askRefundAddress: `📍 Por favor, envía la dirección de Bitcoin a la que deseas recibir tu reembolso:`,
@@ -354,12 +356,12 @@ export default {
   btnNo: "❌ No, cancelar",
   orderCancelled: "🚫 La orden ha sido cancelada o declinada.",
   claimSuccess: (txid: string) =>
-    `🎉 *¡Retiro Exitoso!*\n\nLos fondos van camino a tu billetera.\n🔎 [Ver TX](https://mempool.space/testnet4/tx/${txid})`,
+    `🎉 *¡Retiro Exitoso!*\n\nLos fondos van camino a tu billetera.\n🔎 [Ver TX](${mempoolBaseURL}/tx/${txid})`,
   errorProcessingTx: (err: string) => `❌ *Error en la red:*\n\`${err}\``,
 
   // ─────────────────────────── Disputas ───────────────────────────
 
-  disputeNotAllowed: `❌ No puedes abrir una disputa en el estado actual de la orden. Las disputas solo aplican a órdenes con fondos activos en el Escrow.`,
+  disputeNotAllowed: `❌ No puedes abrir una disputa en el estado actual de la orden. Las disputas solo aplican a órdenes con fondos activos en el escrow.`,
   disputeAlreadyOpen: `⚠️ Ya existe una disputa abierta para esta orden.`,
 
   disputeOpened: (code: string, orderId: string) =>
@@ -452,12 +454,12 @@ export default {
   settleBuyerWinsNotifyBuyer: (orderId: string) =>
     `⚖️ *Disputa resuelta a tu favor.*\n\nLa orden \`${orderId}\` fue resuelta a favor del comprador. Ya puedes reclamar tus fondos ejecutando:\n\n\`/claim ${orderId}\``,
   settleBuyerWinsNotifySeller: (orderId: string) =>
-    `⚖️ *Disputa resuelta.*\n\nLa orden \`${orderId}\` fue resuelta a favor del comprador. Los fondos del Escrow serán liberados hacia su dirección.`,
+    `⚖️ *Disputa resuelta.*\n\nLa orden \`${orderId}\` fue resuelta a favor del comprador. Los fondos del escrow serán liberados hacia su dirección.`,
 
   settleSellerWinsNotifySeller: (orderId: string) =>
     `⚖️ *Disputa resuelta a tu favor.*\n\nLa orden \`${orderId}\` fue resuelta a tu favor. Puedes recuperar tus fondos ejecutando:\n\n\`/claim ${orderId}\``,
   settleSellerWinsNotifyBuyer: (orderId: string) =>
-    `⚖️ *Disputa resuelta.*\n\nLa orden \`${orderId}\` fue resuelta a favor del vendedor. Los fondos del Escrow serán devueltos a su dueño original.`,
+    `⚖️ *Disputa resuelta.*\n\nLa orden \`${orderId}\` fue resuelta a favor del vendedor. Los fondos del escrow serán devueltos a su dueño original.`,
 
   settleCancelledNotifyBuyer: (orderId: string) =>
     `↩️ *Disputa resuelta: orden cancelada.*\n\nEl administrador determinó cancelar la orden \`${orderId}\`. Los fondos serán devueltos al vendedor.`,
@@ -467,4 +469,7 @@ export default {
   settleResolutionBuyerLabel: "A favor del comprador",
   settleResolutionSellerLabel: "A favor del vendedor",
   settleResolutionRefundLabel: "Cancelar / Reembolsar al vendedor",
+
+  invalidLanguage: '❌ Idioma inválido. Los idiomas disponibles son:\n\n',
+  languageUpdateSuccess: '✅ Idioma actualizado correctamente.'
 };

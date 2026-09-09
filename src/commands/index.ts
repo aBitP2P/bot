@@ -7,6 +7,7 @@ import { disputeCommand } from "./dispute.js";
 import { takeDisputeCommand } from "./takeDispute.js";
 import { settleCommand } from "./settle.js";
 import { helpCommand } from "./help.js";
+import { setlangCommand } from "./setlang.js";
 export {
   claimCommand,
   fiatsentCommand,
@@ -16,5 +17,6 @@ export {
   disputeCommand,
   takeDisputeCommand,
   settleCommand,
-  helpCommand
+  helpCommand,
+  setlangCommand
 }

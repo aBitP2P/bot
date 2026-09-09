@@ -36,6 +36,7 @@ import {
   takeDisputeCommand,
   settleCommand,
   helpCommand,
+  setlangCommand,
 } from "./commands/index.js";
 import {
   claimPasswordStep,
@@ -69,6 +70,7 @@ bot.command("dispute", disputeCommand);
 bot.command("takedispute", takeDisputeCommand);
 bot.command("settle", settleCommand);
 bot.command("help", helpCommand);
+bot.command("setlang", setlangCommand);
 
 bot.on("callback_query", async (ctx, next) => {
   const query = ctx.callbackQuery as { data?: string };

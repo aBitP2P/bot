@@ -2,11 +2,11 @@ import * as bitcoin from "bitcoinjs-lib"
 import ECPairFactory from "ecpair"
 import * as ecc from "tiny-secp256k1"
 import crypto from "node:crypto"
-import { network, mempoolBaseURL, getMempoolApiPath } from "./network.js";
+import { network, mempoolAPIBaseURL, getMempoolApiPath } from "./network.js";
 import { getBotFeeAddress, getNextDerivationIndex } from "./botFee.js";
 
 export const ECPair = ECPairFactory(ecc);
-export { network, mempoolBaseURL, getMempoolApiPath };
+export { network, mempoolAPIBaseURL as mempoolBaseURL, getMempoolApiPath };
 
 // Deriva una clave del bot ÚNICA POR ORDEN a partir de BOT_WIF + orderId (HMAC-SHA256
 // como tweak, misma técnica que la derivación de hijos en BIP32). Determinista: el

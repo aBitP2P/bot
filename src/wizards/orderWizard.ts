@@ -8,7 +8,6 @@ import crypto from "node:crypto"
 import { getUser } from '../db/users.js';
 import { createOrder } from '../db/orders.js';
 import fiatCodes from '../utils/allowedFiatCodes.js';
-import { sanitizeMD } from '../utils/index.js';
 
 const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -98,8 +97,9 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
   switch (step) {
     case 'WAITING_FIAT':
-      if (!text || !(text in fiatCodes)) return true;
-      ctx.session.draft.fiat = text.toUpperCase();
+      const f = text.toUpperCase();
+      if (!f || !(f in fiatCodes)) return true;
+      ctx.session.draft.fiat = f.toUpperCase();
       ctx.session.step = 'WAITING_AMOUNT';
       await updatePreview('WAITING_AMOUNT');
       return true;
@@ -128,7 +128,7 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
     case 'WAITING_PAYMENT_METHOD':
       if (!text || text.trim().length === 0) return true;
-      const sanitized = sanitizeMD(text);
+      const sanitized = text.replace(/[&/\\#,+~%.'":*?<>{}]/g, '');
       if (sanitized.trim().length === 0) return true;
 
       ctx.session.draft.paymentMethod = sanitized;

@@ -1,0 +1,47 @@
+import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
+import type { CommandContext } from "../types.js";
+import { getUser } from "../db/users.js";
+import { dictionaries, type Language } from "../locales/index.js";
+import { isAdmin } from "../utils/admin.js";
+
+export async function releaseCommand(ctx: CommandContext) {
+  const userId = ctx.from.id;
+  const dict = ctx.dict;
+
+  const args = ctx.message.text.split(" ");
+  if (args.length < 2)
+    return ctx.reply(dict.commandUsage("/release <ORDER_ID>"), {
+      parse_mode: "Markdown",
+    });
+
+  const orderId = args[1] as string;
+  const order = await getOrder(orderId);
+
+  if (!order) return ctx.reply(dict.orderNotFound);
+  if (order.status !== "FIAT_SENT")
+    return ctx.reply(dict.waitForBuyerFiatSent(orderId), { parse_mode: 'Markdown' });
+
+  const isCreatorSelling = order.type === "SELL";
+  const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
+  const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
+
+  const isMockBypass = orderId.startsWith("mock") && isAdmin(userId);
+  if (userId !== sellerId && !isMockBypass) return ctx.reply(dict.onlySeller);
+
+  const didRelease = await tryTransitionOrderStatus(
+    orderId,
+    ["FIAT_SENT"],
+    "RELEASABLE",
+  );
+  if (!didRelease) return ctx.reply(dict.invalidOrderStatus);
+
+  const buyer = await getUser(buyerId!);
+  const dictBuyer = dictionaries[(buyer?.language as Language) || "es"];
+
+  await ctx.reply(dict.releaseSuccessSeller(order.id), {
+    parse_mode: "Markdown",
+  });
+  await ctx.telegram.sendMessage(buyerId!, dictBuyer.releaseToBuyer(order.id), {
+    parse_mode: "Markdown",
+  });
+}

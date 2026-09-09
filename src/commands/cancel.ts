@@ -1,0 +1,140 @@
+import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
+import { getUser } from "../db/users.js";
+import { dictionaries, type Language } from "../locales/index.js";
+import type { CommandContext } from "../types.js";
+import { handleOrderCancelledRepublish } from "../handlers/orderHandler.js";
+
+const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
+const TERMINAL_STATUSES = ['RELEASABLE', 'REFUNDABLE', 'COMPLETED', 'CANCELLED', 'REFUNDED', 'DISPUTE'];
+
+export async function cancelCommand(ctx: CommandContext) {
+  const userId = ctx.from.id;
+  const dict = ctx.dict;
+
+  const args = ctx.message.text.split(' ');
+  if (args.length < 2) return ctx.reply(dict.commandUsage('/cancel <ORDER_ID>'), { parse_mode: 'Markdown' });
+
+  const orderId = args[1] as string;
+  const order = await getOrder(orderId);
+
+  if (!order) return ctx.reply(dict.orderNotFound);
+
+  if (TERMINAL_STATUSES.includes(order.status)) {
+    return ctx.reply(dict.cancelNotAllowed);
+  }
+
+  const isCreatorSelling = order.type === 'SELL';
+  const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
+  const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
+
+  if (order.status === 'PENDING') {
+    if (order.creatorId !== userId) return ctx.reply(dict.unauthorizedAccess);
+
+    const didCancel = await tryTransitionOrderStatus(orderId, ['PENDING'], 'CANCELLED');
+    if (!didCancel) return ctx.reply(dict.cancelNotAllowed); // alguien más ya la tomó justo ahora
+
+    if (order.channelMessageId) {
+      try { await ctx.telegram.deleteMessage(PUBLIC_CHANNEL_ID, order.channelMessageId); } catch (e) { }
+    }
+
+    return ctx.reply(dict.orderCancelled);
+  }
+
+  if (userId !== sellerId && userId !== buyerId) {
+    return ctx.reply(dict.unauthorizedAccess);
+  }
+
+  const counterpartyId = userId === sellerId ? buyerId : sellerId;
+
+  switch (order.status) {
+    case 'WAITING_ESCROW': {
+      if (userId !== sellerId) return ctx.reply(dict.cancelOnlySeller);
+
+      const didCancel = await tryTransitionOrderStatus(orderId, ['WAITING_ESCROW'], 'CANCELLED');
+      if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
+
+      if (counterpartyId) {
+        const counterparty = await getUser(counterpartyId);
+        const cDict = dictionaries[(counterparty?.language as Language) || 'es'];
+        await ctx.telegram.sendMessage(counterpartyId, cDict.counterpartyCanceledDeleted(order.id), { parse_mode: 'Markdown' });
+      }
+
+      await ctx.reply(dict.orderCancelled);
+      return;
+    }
+
+    case 'WAITING_TAKER_CONFIRMATION':
+    case 'WAITING_MAKER_CONFIRMATION': {
+      const isOriginalCreator = userId === order.creatorId;
+
+      if (isOriginalCreator) {
+        // El creador retira su propia oferta: cancelación terminal, sin republicar.
+        const didCancel = await tryTransitionOrderStatus(orderId, [order.status], 'CANCELLED');
+        if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
+
+        if (counterpartyId) {
+          const counterparty = await getUser(counterpartyId);
+          const cDict = dictionaries[(counterparty?.language as Language) || 'es'];
+          await ctx.telegram.sendMessage(counterpartyId, cDict.counterpartyCanceledDeleted(order.id), { parse_mode: 'Markdown' });
+        }
+        return ctx.reply(dict.orderCancelled);
+      }
+
+      // El taker se retira: la oferta del creador sigue viva, se republica.
+      // handleOrderCancelledRepublish hace su propio UPDATE; usamos el status
+      // actual ya validado arriba (no terminal) como única vía de entrada.
+      if (counterpartyId) {
+        const counterparty = await getUser(counterpartyId);
+        const cDict = dictionaries[(counterparty?.language as Language) || 'es'];
+        await ctx.telegram.sendMessage(counterpartyId, cDict.matchCancelledRepublished(order.id), { parse_mode: 'Markdown' });
+      }
+      return handleOrderCancelledRepublish(ctx, orderId);
+    }
+
+    case 'UNCONFIRMED':
+      return ctx.reply(dict.cancelUnconfirmed);
+
+    case 'ACTIVE':
+    case 'FIAT_SENT': {
+      const didRequest = await tryTransitionOrderStatus(orderId, [order.status], 'CANCEL_REQUESTED', { cancelRequestedBy: userId });
+      if (!didRequest) return ctx.reply(dict.cancelNotAllowed);
+
+      await ctx.reply(dict.cancelRequestSuccess);
+
+      if (counterpartyId) {
+        const counterparty = await getUser(counterpartyId);
+        const cDict = dictionaries[(counterparty?.language as Language) || 'es'];
+        await ctx.telegram.sendMessage(counterpartyId, cDict.cancelNotifiedCounterparty(order.id), { parse_mode: 'Markdown' });
+      }
+      return;
+    }
+
+    // Ya hay una solicitud pendiente: si la contraparte confirma, se habilita el reembolso.
+    case 'CANCEL_REQUESTED': {
+      const requesterId = order.cancelRequestedBy;
+
+      if (requesterId === userId) {
+        return ctx.reply(dict.cancelAlreadyRequested);
+      }
+
+      const didConfirm = await tryTransitionOrderStatus(orderId, ['CANCEL_REQUESTED'], 'REFUNDABLE', { cancelRequestedBy: null });
+      if (!didConfirm) return ctx.reply(dict.cancelNotAllowed);
+
+      await ctx.reply(userId === sellerId ? dict.cancelAcceptedSeller(order.id) : dict.cancelAccepted(order.id), { parse_mode: 'Markdown' });
+
+      if (requesterId) {
+        const requester = await getUser(requesterId);
+        const rDict = dictionaries[(requester?.language as Language) || 'es'];
+        await ctx.telegram.sendMessage(
+          requesterId,
+          requesterId === sellerId ? rDict.cancelAcceptedSeller(order.id) : rDict.cancelAccepted(order.id),
+          { parse_mode: 'Markdown' }
+        );
+      }
+      return;
+    }
+
+    default:
+      return ctx.reply(dict.cancelNotAllowed);
+  }
+}

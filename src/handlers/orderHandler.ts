@@ -142,7 +142,9 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
   const order = await getOrder(orderId);
   if (!order || !takerId) return;
   if (order.status !== "WAITING_TAKER_CONFIRMATION") return;
-
+  if (order.takerId !== takerId) {
+    return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
+  }
   const dict =
     dictionaries[((await getUser(takerId))?.language as Language) || "es"];
   await ctx.editMessageReplyMarkup(undefined);

@@ -22,7 +22,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
 
 export default {
   welcome:
-    "🤖 ¡aBitP2P te da la bienvenida!\n\n⚠️ *IMPORTANTE:* Antes de operar, configura tu contraseña segura con /setpass para completar la configuración de tu perfil.\n\nUsa /help para ver la lista de comandos completa y el canal donde se publican las órdenes ✨",
+    "🤖 ¡aBitP2P te da la bienvenida!\n\n⚠️ *IMPORTANTE:* Antes de operar, configura tu contraseña segura con /setpass para completar la configuración de tu perfil.\n\nUsa /help para ver la lista de comandos completa. Recuerda unirte a nuestro chat general @aBitP2PGeneral\\_Es y suscribirte al canal de órdenes: @aBitP2PExchange ✨",
   telegramUsernameRequired:
     "❌ **Requiere nombre de usuario**\n\nNecesitas configurar un @username de Telegram para interactuar con este bot. Ve a *Ajustes > Nombre de usuario*, configúralo y vuelve a intentarlo.",
   cancelled: "❌ Proceso cancelado.",

@@ -1,4 +1,4 @@
-import { mysqlTable, varchar, text, int, bigint, double } from "drizzle-orm/mysql-core";
+import { mysqlTable, varchar, text, int, bigint, double, index } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
@@ -35,9 +35,6 @@ export const orders = mysqlTable("orders", {
   buyerPubkey: text("buyer_pubkey"),
   sellerPubkey: text("seller_pubkey"),
 
-  buyerDisputeCode: varchar("buyer_dispute_code", { length: 16 }),
-  sellerDisputeCode: varchar("seller_dispute_code", { length: 16 }),
-
   amountSats: bigint("amount_sats", { mode: "number" }).notNull().default(0),
   escrowAddress: varchar("escrow_address", { length: 255 }),
   witnessScript: text("witness_script"),
@@ -45,7 +42,11 @@ export const orders = mysqlTable("orders", {
   payoutTxid: varchar("payout_txid", { length: 128 }),
 
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
-});
+}, (table) => ({
+  statusIdx: index("status_idx").on(table.status),
+  creatorIdx: index("creator_idx").on(table.creatorId),
+  takerIdx: index("taker_idx").on(table.takerId),
+}));
 
 export const counters = mysqlTable('counters', {
   name: varchar('name', { length: 64 }).primaryKey(),

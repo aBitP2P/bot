@@ -106,6 +106,20 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
     case 'WAITING_AMOUNT':
       if (!text || !/^(\d+([.,]\d{1,2})?)(-(\d+([.,]\d{1,2})?))?$/.test(text)) return true;
+
+      const parts = text.split('-');
+      const amounts = parts.map(p => {
+        const num = Number(p.replace(',', '.'));
+        return num;
+      });
+
+      let isFiatBig = amounts.some(amount => !isFinite(amount) || amount > Number.MAX_SAFE_INTEGER);
+      if (isFiatBig) {
+        await updatePreview('WAITING_AMOUNT', undefined,
+            ctx.dict.fiatValueTooBig);
+          return true;
+      }
+
       const [min, max] = text.split('-').map(Number) as [number, number];
       if (max !== undefined && min >= max) return true;
       const minFiatValue = fiatCodes[ctx.session.draft.fiat!]!.min;

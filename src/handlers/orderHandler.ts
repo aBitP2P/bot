@@ -237,6 +237,9 @@ export async function handleMakerConfirm(
   const order = await getOrder(orderId);
   if (!order || !makerId) return;
   if (order.status !== "WAITING_MAKER_CONFIRMATION") return;
+  if (order.creatorId !== makerId) {
+    return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
+  }
 
   const dict = ctx.dict;
   await ctx.editMessageReplyMarkup(undefined);

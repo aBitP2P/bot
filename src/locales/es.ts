@@ -310,6 +310,7 @@ export default {
   psbtSigningLoading: `⏳ *Co-firmando y transmitiendo a la red...*`,
   fiatValueBelowMinimun: (fiatCode: string, minValue: number) =>
     `❌ La cantidad para ${fiatCode} debe ser al menos ${minValue}. Intenta de nuevo:`,
+  fiatValueTooBig: "❌ El monto es demasiado grande para ser procesado por el sistema.",
 
   counterpartyCanceledDeleted: (orderId: string) =>
     `🚫 Tu contraparte ha cancelado la orden \`${orderId}\`.`,

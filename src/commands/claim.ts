@@ -52,7 +52,7 @@ export async function startClaimPasswordFlow(
 ) {
   const dict = ctx.dict;
   const isRefund = order.status === 'REFUNDABLE';
-  const minerFeeSats = await getLiveMinerFee(order.escrowAddress!);
+  const minerFeeSats = await getLiveMinerFee(order.escrowAddress!, isRefund ? 1 : 2);
 
   let finalAmount: number;
 
@@ -64,7 +64,7 @@ export async function startClaimPasswordFlow(
     finalAmount = totalFundedSats - minerFeeSats;
   } else {
     const baseSats = order.amountSats;
-    const totalBotFee = parseFloat(process.env.BOT_FEE || '0.8');
+    const totalBotFee = parseFloat(process.env.BOT_FEE!);
     const totalBotFeeSats = Math.floor(baseSats * (totalBotFee / 100));
     const buyerFeeSats = Math.floor(totalBotFeeSats / 2);
     finalAmount = baseSats - buyerFeeSats - minerFeeSats;

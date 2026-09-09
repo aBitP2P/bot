@@ -1,7 +1,7 @@
-import * as bitcoin from "bitcoinjs-lib"
-import ECPairFactory from "ecpair"
-import * as ecc from "tiny-secp256k1"
-import crypto from "node:crypto"
+import * as bitcoin from "bitcoinjs-lib";
+import ECPairFactory from "ecpair";
+import * as ecc from "tiny-secp256k1";
+import crypto from "node:crypto";
 import { network, mempoolAPIBaseURL, getMempoolApiPath } from "./network.js";
 import { getBotFeeAddress, getNextDerivationIndex } from "./botFee.js";
 
@@ -16,23 +16,29 @@ export { network, mempoolAPIBaseURL as mempoolBaseURL, getMempoolApiPath };
 export function deriveOrderBotKeypair(orderId: string) {
   const masterBotKeypair = ECPair.fromWIF(process.env.BOT_WIF!, network);
 
-  const tweak = crypto.createHmac('sha256', Buffer.from(masterBotKeypair.privateKey!))
+  const tweak = crypto
+    .createHmac("sha256", Buffer.from(masterBotKeypair.privateKey!))
     .update(orderId)
     .digest();
 
   const tweakedPrivateKey = ecc.privateAdd(masterBotKeypair.privateKey!, tweak);
-  if (!tweakedPrivateKey) throw new Error('No se pudo derivar la clave del bot para esta orden.');
+  if (!tweakedPrivateKey)
+    throw new Error("No se pudo derivar la clave del bot para esta orden.");
 
   return ECPair.fromPrivateKey(Buffer.from(tweakedPrivateKey), { network });
 }
 
-export function generateEscrow(buyerPubkeyHex: string, sellerPubKeyHex: string, orderId: string) {
+export function generateEscrow(
+  buyerPubkeyHex: string,
+  sellerPubKeyHex: string,
+  orderId: string,
+) {
   const botKeypairForOrder = deriveOrderBotKeypair(orderId);
 
   const pubkeys = [
-    Buffer.from(buyerPubkeyHex, 'hex'),
-    Buffer.from(sellerPubKeyHex, 'hex'),
-    Buffer.from(botKeypairForOrder.publicKey)
+    Buffer.from(buyerPubkeyHex, "hex"),
+    Buffer.from(sellerPubKeyHex, "hex"),
+    Buffer.from(botKeypairForOrder.publicKey),
   ];
 
   pubkeys.sort((a, b) => a.compare(b));
@@ -42,40 +48,75 @@ export function generateEscrow(buyerPubkeyHex: string, sellerPubKeyHex: string, 
 
   return {
     address: p2wsh.address!,
-    witnessScript: Buffer.from(p2ms.output!).toString('hex')
-  }
+    witnessScript: Buffer.from(p2ms.output!).toString("hex"),
+  };
 }
 
-export async function getLiveMinerFee(escrowAddress: string): Promise<number> {
+export async function getLiveMinerFee(
+  escrowAddress: string | null,
+  outputCount: number = 1,
+  customUtxosCount?: number,
+): Promise<number> {
   try {
-    const feeRes = await fetch(getMempoolApiPath('v1/fees/recommended'));
+    const feeRes = await fetch(getMempoolApiPath("v1/fees/recommended"));
     const fees = await feeRes.json();
     const feeRate = fees.economyFee;
 
-    const utxoRes = await fetch(getMempoolApiPath(`/address/${escrowAddress}/utxo`));
-    const utxos = await utxoRes.json();
-    const utxoCount = utxos.length || 1;
+    let utxoCount: number;
+    if (escrowAddress !== null) {
+      const utxoRes = await fetch(
+        getMempoolApiPath(`/address/${escrowAddress}/utxo`),
+      );
+      const utxos = await utxoRes.json();
+      utxoCount = utxos.length || 1;
+    } else {
+      utxoCount = customUtxosCount || 1;
+    }
 
-    const estimatedVBytes = 10.5 + 31 + (utxoCount * 104.5);
+    const overhead = 10.5;
+    const outputVBytes = outputCount * 31;
+    const inputVBytes = utxoCount * 104.5;
+
+    const estimatedVBytes = overhead + outputVBytes + inputVBytes;
 
     return Math.ceil(estimatedVBytes * feeRate);
   } catch (error) {
     console.error("Error calculando fee en vivo:", error);
-    return 500; // Fallback de seguridad en caso de que la API falle
+    return 250; // Fallback de seguridad en caso de que la API falle
+  }
+}
+
+export type MempoolFeesData = {
+  fastestFee: number;
+  halfHourFee: number;
+  hourFee: number;
+  economyFee: number;
+};
+
+export async function getLiveMinerFeeList() {
+  try {
+    const feeRes = await fetch(getMempoolApiPath("v1/fees/recommended"));
+    const fees = await feeRes.json();
+    return fees as MempoolFeesData;
+  } catch (error) {
+    return null;
   }
 }
 
 export async function checkEscrowFunding(address: string) {
   try {
     const res = await fetch(getMempoolApiPath(`address/${address}/utxo`), {
-      cache: 'no-store'
+      cache: "no-store",
     });
     if (!res.ok) return null;
-    
+
     const utxos = await res.json();
     if (utxos.length === 0) return null;
 
-    const totalFundedSats = utxos.reduce((acc: number, utxo: any) => acc + utxo.value, 0);
+    const totalFundedSats = utxos.reduce(
+      (acc: number, utxo: any) => acc + utxo.value,
+      0,
+    );
     const confirmed = utxos.some((utxo: any) => utxo.status.confirmed === true);
     const txid = utxos[0].txid;
 
@@ -96,32 +137,41 @@ export function isValidAddress(address: string): boolean {
 }
 
 export function generateWif(): string {
-  const keyPair = ECPair.makeRandom({ network }); 
+  const keyPair = ECPair.makeRandom({ network });
   return keyPair.toWIF();
 }
 
 export function getPubkeyFromWif(wif: string): string {
   try {
     const keyPair = ECPair.fromWIF(wif, network);
-    return Buffer.from(keyPair.publicKey).toString('hex');
+    return Buffer.from(keyPair.publicKey).toString("hex");
   } catch (error) {
     console.error("Error al extraer la llave pública:", error);
     throw new Error("El WIF proporcionado no es válido.");
   }
 }
 
-export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<string> {
+export async function broadcastReleaseTx(
+  order: any,
+  buyerWif: string,
+): Promise<string> {
   const buyerKeypair = ECPair.fromWIF(buyerWif, network);
   const escrowBotKeypair = deriveOrderBotKeypair(order.id);
 
-  const utxosRes = await fetch(getMempoolApiPath(`address/${order.escrowAddress}/utxo`));
+  const utxosRes = await fetch(
+    getMempoolApiPath(`address/${order.escrowAddress}/utxo`),
+  );
   const utxos = await utxosRes.json();
-  if (!utxos || utxos.length === 0) throw new Error('No hay fondos en el Escrow.');
+  if (!utxos || utxos.length === 0)
+    throw new Error("No hay fondos en el Escrow.");
 
   const psbt = new bitcoin.Psbt({ network });
-  const witnessScriptBuffer = Buffer.from(order.witnessScript, 'hex');
+  const witnessScriptBuffer = Buffer.from(order.witnessScript, "hex");
   const witnessScript = Uint8Array.from(witnessScriptBuffer);
-  const p2wsh = bitcoin.payments.p2wsh({ redeem: { output: witnessScript, network }, network });
+  const p2wsh = bitcoin.payments.p2wsh({
+    redeem: { output: witnessScript, network },
+    network,
+  });
 
   let totalInput = 0;
   for (const utxo of utxos) {
@@ -138,20 +188,20 @@ export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<
   }
 
   const baseSats = order.amountSats;
-  const botFeePercent = parseFloat(process.env.BOT_FEE || '0.8');
+  const botFeePercent = parseFloat(process.env.BOT_FEE || "0.8");
   const totalBotFee = Math.floor(baseSats * (botFeePercent / 100));
   const buyerFee = Math.floor(totalBotFee / 2);
 
-  const feeRateRes = await fetch(getMempoolApiPath('v1/fees/recommended'));
-  const fees = await feeRateRes.json();
-  const estimatedVBytes = 10.5 + 31 + (utxos.length * 104.5);
-  const minerFee = Math.ceil(estimatedVBytes * fees.hourFee);
+  const minerFee = await getLiveMinerFee(null, 2, utxos.length)
 
   const buyerOutput = baseSats - buyerFee - minerFee;
-  if (buyerOutput <= 0) throw new Error('Las comisiones superan el monto.');
+  if (buyerOutput <= 0) throw new Error("Las comisiones superan el monto.");
 
   const botOutput = totalInput - buyerOutput - minerFee;
-  if (botOutput <= 0) throw new Error('No hay fondos suficientes para cubrir la comisión del bot.');
+  if (botOutput <= 0)
+    throw new Error(
+      "No hay fondos suficientes para cubrir la comisión del bot.",
+    );
 
   const buyerDest = order.buyerAddress;
   const i = await getNextDerivationIndex();
@@ -166,9 +216,9 @@ export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<
   psbt.finalizeAllInputs();
   const txHex = psbt.extractTransaction().toHex();
 
-  const broadcastRes = await fetch(getMempoolApiPath('/tx'), {
-    method: 'POST',
-    body: txHex
+  const broadcastRes = await fetch(getMempoolApiPath("/tx"), {
+    method: "POST",
+    body: txHex,
   });
 
   if (!broadcastRes.ok) {
@@ -177,24 +227,33 @@ export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<
   }
 
   // TXID
-  return await broadcastRes.text(); 
+  return await broadcastRes.text();
 }
 
 // Reembolso de cancelación: firma el bot + el vendedor (no requiere al comprador).
 // Devuelve la totalidad de lo depositado en el escrow, descontando únicamente la fee de minería
 // (sin cobrar la comisión del bot, ya que la operación no se completó).
-export async function broadcastRefundTx(order: any, sellerWif: string): Promise<string> {
+export async function broadcastRefundTx(
+  order: any,
+  sellerWif: string,
+): Promise<string> {
   const sellerKeypair = ECPair.fromWIF(sellerWif, network);
   const escrowBotKeypair = deriveOrderBotKeypair(order.id);
 
-  const utxosRes = await fetch(getMempoolApiPath(`address/${order.escrowAddress}/utxo`));
+  const utxosRes = await fetch(
+    getMempoolApiPath(`address/${order.escrowAddress}/utxo`),
+  );
   const utxos = await utxosRes.json();
-  if (!utxos || utxos.length === 0) throw new Error('No hay fondos en el Escrow.');
+  if (!utxos || utxos.length === 0)
+    throw new Error("No hay fondos en el Escrow.");
 
   const psbt = new bitcoin.Psbt({ network });
-  const witnessScriptBuffer = Buffer.from(order.witnessScript, 'hex');
+  const witnessScriptBuffer = Buffer.from(order.witnessScript, "hex");
   const witnessScript = Uint8Array.from(witnessScriptBuffer);
-  const p2wsh = bitcoin.payments.p2wsh({ redeem: { output: witnessScript, network }, network });
+  const p2wsh = bitcoin.payments.p2wsh({
+    redeem: { output: witnessScript, network },
+    network,
+  });
 
   let totalInput = 0;
   for (const utxo of utxos) {
@@ -210,13 +269,13 @@ export async function broadcastRefundTx(order: any, sellerWif: string): Promise<
     totalInput += utxo.value;
   }
 
-  const feeRateRes = await fetch(getMempoolApiPath('/v1/fees/recommended'));
-  const fees = await feeRateRes.json();
-  const estimatedVBytes = 10.5 + 31 + (utxos.length * 104.5); // 1 sola salida
-  const minerFee = Math.ceil(estimatedVBytes * fees.hourFee);
+  const minerFee = await getLiveMinerFee(null, 1, utxos.length);
 
   const refundOutput = totalInput - minerFee;
-  if (refundOutput <= 0) throw new Error('La comisión minera supera el monto disponible en el Escrow.');
+  if (refundOutput <= 0)
+    throw new Error(
+      "La comisión minera supera el monto disponible en el Escrow.",
+    );
 
   psbt.addOutput({ address: order.refundAddress, value: BigInt(refundOutput) });
 
@@ -226,9 +285,9 @@ export async function broadcastRefundTx(order: any, sellerWif: string): Promise<
   psbt.finalizeAllInputs();
   const txHex = psbt.extractTransaction().toHex();
 
-  const broadcastRes = await fetch(getMempoolApiPath('tx'), {
-    method: 'POST',
-    body: txHex
+  const broadcastRes = await fetch(getMempoolApiPath("tx"), {
+    method: "POST",
+    body: txHex,
   });
 
   if (!broadcastRes.ok) {

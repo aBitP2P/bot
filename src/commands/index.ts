@@ -1,22 +1,11 @@
-import { claimCommand } from "./claim.js";
-import { fiatsentCommand } from "./fiatsent.js";
-import { releaseCommand } from "./release.js"
-import { cancelCommand } from "./cancel.js"
-import { listOrdersCommand } from "./listorders.js";
-import { disputeCommand } from "./dispute.js";
-import { takeDisputeCommand } from "./takeDispute.js";
-import { settleCommand } from "./settle.js";
-import { helpCommand } from "./help.js";
-import { setlangCommand } from "./setlang.js";
-export {
-  claimCommand,
-  fiatsentCommand,
-  releaseCommand,
-  cancelCommand,
-  listOrdersCommand,
-  disputeCommand,
-  takeDisputeCommand,
-  settleCommand,
-  helpCommand,
-  setlangCommand
-}
+export { claimCommand } from "./claim.js";
+export { fiatsentCommand } from "./fiatsent.js";
+export { releaseCommand } from "./release.js"
+export { cancelCommand } from "./cancel.js"
+export { listOrdersCommand } from "./listorders.js";
+export { disputeCommand } from "./dispute.js";
+export { takeDisputeCommand } from "./takeDispute.js";
+export { settleCommand } from "./settle.js";
+export { helpCommand } from "./help.js";
+export { setlangCommand } from "./setlang.js";
+export { feesCommand } from "./fees.js"

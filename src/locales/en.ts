@@ -1,4 +1,5 @@
 import type { orders } from "../db/schema.js";
+import type { MempoolFeesData } from "../utils/bitcoin.js";
 import { mempoolBaseURL } from "../utils/network.js";
 
 type OrderRow = typeof orders.$inferSelect;
@@ -55,6 +56,7 @@ export default {
     `⚙️ *Account and System*\n` +
     `/setpass — Encrypt your profile with a password\n` +
     `/setlang — Switch language, ex: /setlang ES\n` +
+    "/fees - Check the fees applied for your orders \n" +
     `/exit — Cancel current action\n\n` +
     `📢 Channel: @aBitP2PExchange\n` +
     `💬 Group: @aBitP2PGeneral\\_es`,
@@ -88,7 +90,9 @@ export default {
       ].join("\n");
     });
 
-    return blocks.join("\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n");
+    return blocks.join(
+      "\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n",
+    );
   },
 
   buyType: "🟢 Buy",
@@ -314,7 +318,7 @@ export default {
     `🚫 Your counterparty cancelled the agreement for order \`${orderId}\`.\n\nThe order has been republished in the channel so another user can take it.`,
 
   cancelNotifiedCounterparty: (orderId: string) =>
-    `🔔 *Cancellation Request*\n\nYour counterparty has requested to cancel order \`${orderId}\`. If you agree, run \`/cancel ${orderId}\` to confirm and refund the funds to the seller.\n\n` + 
+    `🔔 *Cancellation Request*\n\nYour counterparty has requested to cancel order \`${orderId}\`. If you agree, run \`/cancel ${orderId}\` to confirm and refund the funds to the seller.\n\n` +
     `⚠️ If you have already made the payment, open a dispute, do not accept the cancellation: \`/dispute ${orderId}\``,
 
   cancelAccepted: (orderId: string) =>
@@ -341,7 +345,8 @@ export default {
     "👀 The aBit team is not responsible for the loss of it.\n\n" +
     "🔑 Please, type your password to configure your user: ",
   passwordAlreadySet: "❌ You already have a previously set password.",
-  passwordSetSuccess: `✅ *Password configured successfully.* Profile encrypted and ready to use.\n\n` + 
+  passwordSetSuccess:
+    `✅ *Password configured successfully.* Profile encrypted and ready to use.\n\n` +
     "_Keep in mind that it is only for bot usage. The funds you buy will be sent to any address you desire at the moment, the bot does not directly custody the funds at any time._",
   cancelRequestSuccess: `✅ You have requested the cancellation. Waiting for your counterparty to approve it with /cancel.`,
   askRefundAddress: `📍 Please, send the Bitcoin address where you wish to receive your refund:`,
@@ -463,6 +468,24 @@ export default {
   settleResolutionSellerLabel: "In favor of the seller",
   settleResolutionRefundLabel: "Cancel / Refund seller",
 
-  invalidLanguage: '❌ Invalid language. The available languages are:\n\n',
-  languageUpdateSuccess: '✅ Language updated successfully.'
+  invalidLanguage: "❌ Invalid language. The available languages are:\n\n",
+  languageUpdateSuccess: "✅ Language updated successfully.",
+
+  couldNotFetchFees: "❌ Could not fetch actual fees, try again later.",
+  feesList: (botFee: string, feesData: MempoolFeesData) =>
+    "⚡ *Network Fees (Mempool)*\n\n" +
+    "┌ ▸ Fast 🚀\n" +
+    `│   \`${feesData.fastestFee}\` sat/vB\n` +
+    "├ ▸ Medium ⚡\n" +
+    `│   \`${feesData.halfHourFee}\` sat/vB\n` +
+    "├ ▸ Slow 🐢\n" +
+    `│   \`${feesData.hourFee}\` sat/vB\n` +
+    "└ ▸ *Economy* ✅ *(used by the bot)*\n" +
+    `    \`${feesData.economyFee}\` sat/vB\n\n` +
+    "━━━━━━━━━━━━━━━━━━━━\n\n" +
+    "🤖 *Bot Fee*\n" +
+    `   \`${botFee}%\`\n` +
+    "   └ Split 50/50 between both parties\n\n" +
+    "💡 The economy fee is sufficient for " +
+    "the transaction to confirm within a few hours without overpaying.",
 };

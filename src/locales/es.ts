@@ -1,4 +1,5 @@
 import type { orders } from "../db/schema.js";
+import type { MempoolFeesData } from "../utils/bitcoin.js";
 import { mempoolBaseURL } from "../utils/network.js";
 
 type OrderRow = typeof orders.$inferSelect;
@@ -55,6 +56,7 @@ export default {
     `⚙️ *Cuenta y Sistema*\n` +
     `/setpass — Encripta tu perfil a partir de una contraseña\n` +
     `/setlang — Cambia de idioma, ej: /setlang EN\n` +
+    "/fees - Revisa como están las comisiones para tus órdenes \n" +
     `/exit — Cancelar la acción actual\n\n` +
     `📢 Canal: @aBitP2PExchange\n` +
     `💬 Grupo: @aBitP2PGeneral\\_es`,
@@ -88,7 +90,9 @@ export default {
       ].join("\n");
     });
 
-    return blocks.join("\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n");
+    return blocks.join(
+      "\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n",
+    );
   },
 
   buyType: "🟢 Compra",
@@ -314,7 +318,7 @@ export default {
     `🚫 Tu contraparte canceló el acuerdo de la orden \`${orderId}\`.\n\nLa orden ha vuelto a publicarse en el canal para que otro usuario pueda tomarla.`,
 
   cancelNotifiedCounterparty: (orderId: string) =>
-    `🔔 *Solicitud de Cancelación*\n\nTu contraparte ha solicitado cancelar la orden \`${orderId}\`. Si estás de acuerdo, ejecuta \`/cancel ${orderId}\` para confirmar y reembolsar los fondos al vendedor.\n\n` + 
+    `🔔 *Solicitud de Cancelación*\n\nTu contraparte ha solicitado cancelar la orden \`${orderId}\`. Si estás de acuerdo, ejecuta \`/cancel ${orderId}\` para confirmar y reembolsar los fondos al vendedor.\n\n` +
     `⚠️ Si ya has hecho el pago, abre una disputa, no aceptes la cancelación: \`/dispute ${orderId}\``,
 
   cancelAccepted: (orderId: string) =>
@@ -341,7 +345,8 @@ export default {
     "👀 El equipo de aBit no se hace responsable de la pérdida de esta.\n\n" +
     "🔑 Por favor, escribe tu contraseña para configurar tu usuario: ",
   passwordAlreadySet: "❌ Ya tienes una contraseña establecida previamente.",
-  passwordSetSuccess: `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.\n\n` + 
+  passwordSetSuccess:
+    `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.\n\n` +
     "_Ten en centa que solo es para uso del bot. Los fondos que compres, se enviarán a cualquier dirección que desees al momento, el bot no custodia en ningún momento los fondos de manera directa._",
   cancelRequestSuccess: `✅ Has solicitado la cancelación. Esperando a que tu contraparte la apruebe con /cancel.`,
   askRefundAddress: `📍 Por favor, envía la dirección de Bitcoin a la que deseas recibir tu reembolso:`,
@@ -463,6 +468,25 @@ export default {
   settleResolutionSellerLabel: "A favor del vendedor",
   settleResolutionRefundLabel: "Cancelar / Reembolsar al vendedor",
 
-  invalidLanguage: '❌ Idioma inválido. Los idiomas disponibles son:\n\n',
-  languageUpdateSuccess: '✅ Idioma actualizado correctamente.'
+  invalidLanguage: "❌ Idioma inválido. Los idiomas disponibles son:\n\n",
+  languageUpdateSuccess: "✅ Idioma actualizado correctamente.",
+
+  couldNotFetchFees:
+    "❌ No se ha podido conseguir las fees actuales, inténtalo de nuevo más tarde.",
+  feesList: (botFee: string, feesData: MempoolFeesData) =>
+    "⚡ *Tarifas de Red (Mempool)*\n\n" +
+    "┌ ▸ Rápida 🚀\n" +
+    `│   \`${feesData.fastestFee}\` sat/vB\n` +
+    "├ ▸ Media ⚡\n" +
+    `│   \`${feesData.halfHourFee}\` sat/vB\n` +
+    "├ ▸ Lenta 🐢\n" +
+    `│   \`${feesData.hourFee}\` sat/vB\n` +
+    "└ ▸ *Económica* ✅ *(usada por el bot)*\n" +
+    `    \`${feesData.economyFee}\` sat/vB\n\n` +
+    "━━━━━━━━━━━━━━━━━━━━\n\n" +
+    "🤖 *Comisión del Bot*\n" +
+    `   \`${botFee}%\`\n` +
+    "   └ Se divide 50/50 entre ambas partes\n\n" +
+    "💡 La tarifa económica es suficiente para " +
+    "que la transacción se confirme en las próximas horas sin pagar de más.",
 };

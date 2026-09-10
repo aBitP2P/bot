@@ -348,7 +348,7 @@ export default {
   passwordAlreadySet: "❌ Ya tienes una contraseña establecida previamente.",
   passwordSetSuccess:
     `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.\n\n` +
-    "_Ten en centa que solo es para uso del bot. Los fondos que compres, se enviarán a cualquier dirección que desees al momento, el bot no custodia en ningún momento los fondos de manera directa._",
+    "_Ten en cuenta que solo es para uso del bot. Los fondos que compres, se enviarán a cualquier dirección que desees al momento, el bot no custodia en ningún momento los fondos de manera directa._",
   cancelRequestSuccess: `✅ Has solicitado la cancelación. Esperando a que tu contraparte la apruebe con /cancel.`,
   askRefundAddress: `📍 Por favor, envía la dirección de Bitcoin a la que deseas recibir tu reembolso:`,
   btnYes: "✅ Sí, continuar",

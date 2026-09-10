@@ -491,4 +491,7 @@ export default {
     "   └ Split 50/50 between both parties\n\n" +
     "💡 The economy fee is sufficient for " +
     "the transaction to confirm within a few hours without overpaying.",
+  
+  selectOrderToCancel: "👉 Select the order you want to cancel, you can check details by using /listorders",
+  maxOrdersReached: "❌ You reached the limit of orders created by you."
 };

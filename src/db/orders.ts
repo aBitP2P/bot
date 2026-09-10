@@ -1,15 +1,46 @@
-import { and, eq, inArray, type SQL } from "drizzle-orm";
+import { and, eq, inArray, ne, notInArray, or, type SQL } from "drizzle-orm";
 import { db } from "./index.js";
 import { orders } from "./schema.js";
 import type { ResultSetHeader } from "mysql2";
+import { TERMINAL_STATUSES } from "../shared/constants.js";
 
 export async function createOrder(orderData: typeof orders.$inferInsert) {
   return await db.insert(orders).values(orderData);
 }
 
 export async function getOrder(orderId: string) {
-  const result = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  const result = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
   return result[0];
+}
+
+export async function getUserOrders(userId: number) {
+  return await db
+    .select()
+    .from(orders)
+    .where(
+      and(
+        or(eq(orders.creatorId, userId), eq(orders.takerId, userId)),
+        notInArray(orders.status, ["COMPLETED", "CANCELLED", "REFUNDED"]),
+        or(ne(orders.status, "PENDING"), eq(orders.creatorId, userId)),
+      ),
+    );
+}
+
+// Diferente a getUserOrders, ya que solo retornará aquellas creadas por el usuario.
+export async function getOrdersCreatedBy(userId: number) {
+  return await db
+    .select()
+    .from(orders)
+    .where(
+      and(
+        eq(orders.creatorId, userId),
+        notInArray(orders.status, TERMINAL_STATUSES),
+      ),
+    );
 }
 
 /**
@@ -30,7 +61,9 @@ export async function tryTransitionOrderStatus(
   const [result] = (await db
     .update(orders)
     .set({ status: toStatus, ...extraFields })
-    .where(and(eq(orders.id, orderId), inArray(orders.status, fromStatuses)))) as unknown as [ResultSetHeader];
+    .where(
+      and(eq(orders.id, orderId), inArray(orders.status, fromStatuses)),
+    )) as unknown as [ResultSetHeader];
 
   return result.affectedRows > 0;
 }
@@ -47,7 +80,9 @@ export async function tryConditionalUpdate(
   const [result] = (await db
     .update(orders)
     .set(fields)
-    .where(and(eq(orders.id, orderId), condition))) as unknown as [ResultSetHeader];
+    .where(and(eq(orders.id, orderId), condition))) as unknown as [
+    ResultSetHeader,
+  ];
 
   return result.affectedRows > 0;
 }

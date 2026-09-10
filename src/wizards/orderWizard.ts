@@ -1,12 +1,12 @@
 import { Markup } from 'telegraf';
-import { type BotContext, type OrderType, type WizardStep } from '../types.js';
+import { type BotContext, type CommandContext, type OrderType, type WizardStep } from '../types.js';
 import { t, type Language, dictionaries } from '../locales/index.js';
 import { db } from '../db/index.js';
 import { orders } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import crypto from "node:crypto"
 import { getUser } from '../db/users.js';
-import { createOrder } from '../db/orders.js';
+import { createOrder, getOrdersCreatedBy } from '../db/orders.js';
 import fiatCodes from '../utils/allowedFiatCodes.js';
 
 const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
@@ -41,10 +41,13 @@ function getWizardPreviewText(draft: any, step: WizardStep, lang: Language, cust
   return dict.wizardPreview(typeText, fiatText, amountText, marginText, methodText, promptText);
 }
 
-export async function startOrderWizard(ctx: BotContext, type: OrderType) {
-  const userId = ctx.from?.id;
+export async function startOrderWizard(ctx: CommandContext, type: OrderType) {
+  const userId = ctx.from.id;
   if (!userId) return;
   if (!ctx.user.encryptedWif) return ctx.reply(ctx.dict.setYourPersonalPassword);
+  let orderList = await getOrdersCreatedBy(userId);
+  if (orderList.length >= 6) return await ctx.reply(ctx.dict.maxOrdersReached);
+
   const lang = ctx.user.language as Language;
 
   ctx.session = {

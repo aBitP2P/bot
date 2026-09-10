@@ -1,4 +1,6 @@
 import type { orders } from "../db/schema.js";
+import { Strings } from "../shared/constants.js";
+import fiatCodes from "../utils/allowedFiatCodes.js";
 import type { MempoolFeesData } from "../utils/bitcoin.js";
 import { mempoolBaseURL } from "../utils/network.js";
 
@@ -23,7 +25,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
 
 export default {
   welcome:
-    "🤖 Welcome to aBitP2P!\n\n⚠️ *IMPORTANT:* Before trading, set up your secure password with /setpass to complete your profile configuration.\n\nUse /help to see the full list of commands. Remember to join our General Chat @aBitP2PGeneral\\_Es and to subscribe to orders channel @aBitP2PExchange ✨",
+    "🤖 Welcome to aBitP2P!\n\n⚠️ *IMPORTANT:* Before trading, set up your secure password with /setpass to complete your profile configuration.\n\nUse /help to see the full list of commands. Remember to join our General Chat " + Strings.GENERAL_CHAT_TAG + " and to subscribe to orders channel " + Strings.ORDER_CHANNEL_TAG + " ✨",
   telegramUsernameRequired:
     "❌ **Username required**\n\nYou need to set up a Telegram @username to interact with this bot. Go to *Settings > Username*, set it up, and try again.",
   cancelled: "❌ Process cancelled.",
@@ -35,7 +37,7 @@ export default {
     "✅ *Order successfully published in the channel!*\n" +
     "You can cancel it using `/cancel " +
     orderId +
-    "`",
+    "`\n" + "👉 " + Strings.ORDER_CHANNEL_TAG,
   setYourPersonalPassword:
     "❌ You must first set your password with /setpass to take or create orders.",
   noOrdersFound: "❌ No orders created by you were found.",
@@ -58,8 +60,8 @@ export default {
     `/setlang — Switch language, ex: /setlang ES\n` +
     "/fees - Check the fees applied for your orders \n" +
     `/exit — Cancel current action\n\n` +
-    `📢 Channel: @aBitP2PExchange\n` +
-    `💬 Group: @aBitP2PGeneral\\_es`,
+    `📢 Channel: ${Strings.ORDER_CHANNEL_TAG} \n` +
+    `💬 Group: ${Strings.GENERAL_CHAT_TAG}`,
   listOrders: (list: OrderRow[]) => {
     if (list.length === 0) return "📭 You have no registered orders.";
 
@@ -163,7 +165,7 @@ export default {
     id: string;
   }) =>
     `**${action} Bitcoin**\n\n` +
-    `💵 For ${amountFiat} ${fiat}\n` +
+    `For ${amountFiat} ${fiat} ${fiatCodes[fiat]?.emoji}\n` +
     `💳 ${payDirection} ${method}\n` +
     `🤝 Has ${tradesCount} successful trades\n` +
     `⏳ Using the bot for ${daysUsing} days\n\n` +

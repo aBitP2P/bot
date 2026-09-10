@@ -45,6 +45,7 @@ import {
   claimRefundAddressStep,
 } from "./steps/index.js";
 import { resolveDispute } from "./handlers/disputeHandler.js";
+import { handleOrderCancelFromCommand } from "./commands/cancel.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -101,8 +102,17 @@ bot.on("callback_query", async (ctx, next) => {
     const orderId = data.replace("taker_cancel_order_", "");
     return handleOrderCancelledRepublish(ctx, orderId);
   }
-  if (data.startsWith("cancel_order_")) {
-    const orderId = data.replace("cancel_order_", "");
+
+  if (data.startsWith("cancelCommand_")) {
+    const orderId = data.replace("cancelCommand_", "");
+    try {
+      await ctx.editMessageReplyMarkup(undefined);
+    } catch (e) {}
+    return handleOrderCancelFromCommand(ctx, orderId);
+  }
+
+  if (data.startsWith("maker_deny_")) {
+    const orderId = data.replace("maker_deny_", "");
     const order = await getOrder(orderId);
     if (!order) return;
 

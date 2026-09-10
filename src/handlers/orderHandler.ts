@@ -223,7 +223,7 @@ export async function notifyMakerForConfirmation(
       parse_mode: "Markdown",
       ...Markup.inlineKeyboard([
         [Markup.button.callback(dict.btnYes, `maker_yes_${order.id}`)],
-        [Markup.button.callback(dict.btnNo, `cancel_order_${order.id}`)],
+        [Markup.button.callback(dict.btnNo, `maker_deny_${order.id}`)],
       ]),
     },
   );

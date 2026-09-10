@@ -1,4 +1,6 @@
 import type { orders } from "../db/schema.js";
+import { Strings } from "../shared/constants.js";
+import fiatCodes from "../utils/allowedFiatCodes.js";
 import type { MempoolFeesData } from "../utils/bitcoin.js";
 import { mempoolBaseURL } from "../utils/network.js";
 
@@ -23,7 +25,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
 
 export default {
   welcome:
-    "🤖 ¡aBitP2P te da la bienvenida!\n\n⚠️ *IMPORTANTE:* Antes de operar, configura tu contraseña segura con /setpass para completar la configuración de tu perfil.\n\nUsa /help para ver la lista de comandos completa. Recuerda unirte a nuestro chat general @aBitP2PGeneral\\_Es y suscribirte al canal de órdenes: @aBitP2PExchange ✨",
+    "🤖 ¡aBitP2P te da la bienvenida!\n\n⚠️ *IMPORTANTE:* Antes de operar, configura tu contraseña segura con /setpass para completar la configuración de tu perfil.\n\nUsa /help para ver la lista de comandos completa. Recuerda unirte a nuestro chat general " + Strings.GENERAL_CHAT_TAG + " y suscribirte al canal de órdenes: " + Strings.ORDER_CHANNEL_TAG + " ✨",
   telegramUsernameRequired:
     "❌ **Requiere nombre de usuario**\n\nNecesitas configurar un @username de Telegram para interactuar con este bot. Ve a *Ajustes > Nombre de usuario*, configúralo y vuelve a intentarlo.",
   cancelled: "❌ Proceso cancelado.",
@@ -35,7 +37,7 @@ export default {
     "✅ *¡Orden publicada exitosamente en el canal!*\n" +
     "Puedes cancelarlo usando `/cancel " +
     orderId +
-    "`",
+    "`\n" + "👉 " + Strings.ORDER_CHANNEL_TAG,
   setYourPersonalPassword:
     "❌ Primero debes de establecer tu contraseña con /setpass para poder tomar o crear órdenes.",
   noOrdersFound: "❌ No se han encontrado ordenes creadas por ti.",
@@ -58,8 +60,8 @@ export default {
     `/setlang — Cambia de idioma, ej: /setlang EN\n` +
     "/fees - Revisa como están las comisiones para tus órdenes \n" +
     `/exit — Cancelar la acción actual\n\n` +
-    `📢 Canal: @aBitP2PExchange\n` +
-    `💬 Grupo: @aBitP2PGeneral\\_es`,
+    `📢 Canal: ${Strings.ORDER_CHANNEL_TAG}\n` +
+    `💬 Grupo: ${Strings.GENERAL_CHAT_TAG}`,
   listOrders: (list: OrderRow[]) => {
     if (list.length === 0) return "📭 No tienes órdenes registradas.";
 
@@ -163,7 +165,7 @@ export default {
     id: string;
   }) =>
     `**${action} Bitcoin**\n\n` +
-    `💵 Por ${amountFiat} ${fiat}\n` +
+    `Por ${amountFiat} ${fiat} ${fiatCodes[fiat]?.emoji}\n ` +
     `💳 ${payDirection} ${method}\n` +
     `🤝 Tiene ${tradesCount} operaciones exitosas\n` +
     `⏳ Usa el bot hace ${daysUsing} días\n\n` +
@@ -353,7 +355,7 @@ export default {
   askRefundAddress: `📍 Por favor, envía la dirección de Bitcoin a la que deseas recibir tu reembolso:`,
   btnYes: "✅ Sí, continuar",
   btnNo: "❌ No, cancelar",
-  orderCancelled: "🚫 La orden ha sido cancelada o declinada.",
+  orderCancelled: "🚫 La orden ha sido cancelada.",
   claimSuccess: (txid: string) =>
     `🎉 *¡Retiro Exitoso!*\n\nLos fondos van camino a tu billetera.\n🔎 [Ver TX](${mempoolBaseURL}/tx/${txid})`,
   errorProcessingTx: (err: string) => `❌ *Error en la red:*\n\`${err}\``,
@@ -490,4 +492,7 @@ export default {
     "   └ Se divide 50/50 entre ambas partes\n\n" +
     "💡 La tarifa económica es suficiente para " +
     "que la transacción se confirme en las próximas horas sin pagar de más.",
+
+  selectOrderToCancel: "👉 Selecciona la orden que quieres cancelar, puedes ver los detalles con /listorders",
+  maxOrdersReached: "❌ Haz alcanzado el límite de órdenes creadas por ti."
 };

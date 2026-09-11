@@ -19,7 +19,7 @@ import {
 } from "./handlers/orderHandler.js";
 import { getOrder, tryTransitionOrderStatus } from "./db/orders.js";
 import { message } from "telegraf/filters";
-import { orders } from "./db/schema.js";
+import { orderRatings, orders, users } from "./db/schema.js";
 import { db } from "./db/index.js";
 import { eq } from "drizzle-orm";
 import { isValidAddress } from "./core/bitcoin/index.js";
@@ -46,6 +46,8 @@ import {
 } from "./steps/index.js";
 import { resolveDispute } from "./handlers/disputeHandler.js";
 import { handleOrderCancelFromCommand } from "./commands/cancel.js";
+import crypto from "node:crypto"
+import { handleRating } from "./handlers/ratingHandler.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -53,7 +55,12 @@ bot.use(
   session({ defaultSession: (): SessionData => ({ step: "IDLE", draft: {} }) }),
 );
 bot.use(userMiddleware);
-
+bot.use((ctx, next) => {
+  if (ctx.message && 'text' in ctx.message && ctx.message.text.startsWith('/')) {
+    ctx.session = { step: "IDLE", draft: {} };
+  }
+  return next();
+});
 bot.command("buy", (ctx) => startOrderWizard(ctx, "BUY"));
 bot.command("sell", (ctx) => startOrderWizard(ctx, "SELL"));
 bot.command("exit", (ctx) => cancelWizard(ctx));
@@ -142,6 +149,21 @@ bot.on("callback_query", async (ctx, next) => {
     return;
   }
 
+  if (data.startsWith("rate_")) {
+    // "rate_5_orderId"
+    const parts = data.split("_");
+    if (parts.length < 3) return;
+    const stars = parseInt(parts[1]!);
+    const orderId = parts[2]!;
+    const raterId = ctx.from.id;
+
+    return await handleRating(ctx, {
+      orderId,
+      stars,
+      raterId
+    });
+  }
+
   if (data.startsWith("settle_buyer_")) {
     return resolveDispute(ctx, data.replace("settle_buyer_", ""), "BUYER");
   }
@@ -206,7 +228,7 @@ bot.on(message("text"), async (ctx, next) => {
 
     return proceedAfterTakerAmount(ctx, {
       ...order,
-      fiatAmountLocked: inputAmount // Para evitar volver a hacer un fetch después
+      fiatAmountLocked: inputAmount, // Para evitar volver a hacer un fetch después
     });
   }
 

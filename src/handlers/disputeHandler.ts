@@ -110,7 +110,7 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
       orderId: order.id,
       type: order.type,
       fiatCode: order.fiatCode,
-      amountFiat: order.amountFiat,
+      amountFiat: `${order.fiatAmountLocked}`,
       status: previousStatus,
       escrowAddress: order.escrowAddress || "N/A",
       buyerUsername: buyer!.username,

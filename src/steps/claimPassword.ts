@@ -53,15 +53,6 @@ export async function claimPasswordStep(ctx: CommandContext) {
       { payoutTxid: txid },
     );
 
-    if (!isRefund) {
-      const isCreatorSelling = order.type === "SELL";
-      const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
-      await db
-        .update(users)
-        .set({ tradesCount: sql`${users.tradesCount} + 1` })
-        .where(eq(users.telegramId, sellerId!));
-    }
-
     await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id);
 
     await ctx.reply(

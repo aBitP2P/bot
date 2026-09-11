@@ -60,6 +60,7 @@ export async function handleOrderCancelledRepublish(
       hashtag: `#${order!.type}${order!.fiatCode}`,
       margin: order!.margin,
       rating: orderCreator.rating || 0,
+      ratingCount: orderCreator.ratingCount,
       tradesCount: orderCreator.tradesCount || 0,
       id: order!.id,
     }),

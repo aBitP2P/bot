@@ -1,11 +1,15 @@
-import { mysqlTable, varchar, text, int, bigint, double, index } from "drizzle-orm/mysql-core";
+import { mysqlTable, varchar, text, int, bigint, double, index, uniqueIndex } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
   username: varchar("username", { length: 255 }).notNull(),
   language: varchar("language", { length: 10 }).notNull().default("es"),
+
   tradesCount: int("trades_count").notNull().default(0),
   rating: double("rating").notNull().default(0),
+  ratingCount: int("rating_count").notNull().default(0),
+  ratingSum: int("rating_sum").notNull().default(0),
+  
   pubkey: text("pubkey"),
   encryptedWif: text("encrypted_wif"),
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
@@ -42,13 +46,24 @@ export const orders = mysqlTable("orders", {
   payoutTxid: varchar("payout_txid", { length: 128 }),
 
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
-}, (table) => ({
-  statusIdx: index("status_idx").on(table.status),
-  creatorIdx: index("creator_idx").on(table.creatorId),
-  takerIdx: index("taker_idx").on(table.takerId),
-}));
+}, (table) => [
+  index("status_idx").on(table.status),
+  index("creator_idx").on(table.creatorId),
+  index("taker_idx").on(table.takerId),
+]);
 
 export const counters = mysqlTable('counters', {
   name: varchar('name', { length: 64 }).primaryKey(),
   value: int('value').notNull().default(0),
 });
+
+export const orderRatings = mysqlTable("order_ratings", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  orderId: varchar("order_id", { length: 64 }).notNull(),
+  raterId: bigint("rater_id", { mode: "number" }).notNull(),
+  rateeId: bigint("ratee_id", { mode: "number" }).notNull(),
+  stars: int("stars").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
+}, (table) => [
+  uniqueIndex("unique_rating_idx").on(table.orderId, table.raterId),
+]);

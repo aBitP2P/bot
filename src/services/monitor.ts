@@ -26,7 +26,7 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
       const fundingInfo = await checkEscrowFunding(order.escrowAddress);
       if (!fundingInfo) continue;
 
-      const totalBotFee = parseFloat(process.env.BOT_FEE || "0.8");
+      const totalBotFee = parseFloat(process.env.BOT_FEE!);
       const sellerFeeSats = Math.floor(
         order.amountSats * (totalBotFee / 2 / 100),
       );

@@ -225,8 +225,9 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
     daysUsing,
     hashtag,
     margin: margin!,
-    rating: user?.rating || 0,
+    rating: user!.rating || 0,
     tradesCount: tradesCount,
+    ratingCount: user!.ratingCount,
     id: orderId
   });
 

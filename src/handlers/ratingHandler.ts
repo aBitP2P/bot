@@ -64,7 +64,7 @@ export async function handleRating(
     await ctx.editMessageText(ctx.dict.ratingDone(stars));
     return ctx.answerCbQuery();
   } catch (error: any) {
-    return ctx.answerCbQuery("Error al guardar la calificación.", {
+    return ctx.answerCbQuery(ctx.dict.orderAlreadyRated, {
       show_alert: true,
     });
   }

@@ -89,6 +89,7 @@ export default {
     amountFiat,
     fiat,
     payDirection,
+    ratingCount,
     method,
     daysUsing,
     hashtag,
@@ -108,6 +109,7 @@ export default {
     rating: number;
     tradesCount: number;
     id: string;
+    ratingCount: number;
   }) =>
     `**${action} Bitcoin**\n\n` +
     `Por ${amountFiat} ${fiat} ${FiatCodes[fiat]?.emoji}\n ` +
@@ -116,7 +118,7 @@ export default {
     `⏳ Usa el bot hace ${daysUsing} días\n\n` +
     `${hashtag}\n` +
     `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
-    `${rating.toFixed(1)} ${"⭐".repeat(Number(rating.toFixed(0)))} (${tradesCount})\n\n` +
+    `${rating.toFixed(1)} ${"⭐".repeat(Math.floor(rating))} (${ratingCount})\n\n` +
     `\`${id}\``,
   orderPublishedSuccess: (orderId: string) =>
     "✅ *¡Orden publicada exitosamente en el canal!*\n" +
@@ -289,6 +291,10 @@ export default {
     `El escrow está listo para ser reclamado. Ejecuta el siguiente comando para iniciar el retiro a tu billetera:\n\n` +
     `\`/claim ${orderId}\``,
 
+  // --------------------------- Rating -----------------------------------
+  rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",
+  ratingDone: (stars: number) => `⭐ Has calificado a tu contraparte con ${stars} estrellas.`,
+
   // ─────────────────────────── Claim & Refund ───────────────────────────
   askClaimPassword: (
     minerFee: number,
@@ -451,5 +457,6 @@ export default {
   invalidBuyerAddress:
     "❌ Esa dirección de Bitcoin no es válida. Por favor, envía una dirección correcta:",
   maxOrdersReached: "❌ Haz alcanzado el límite de órdenes creadas por ti.",
-  invalidFiatCode: "❌ El código fiat no fue reconocido, intenta de nuevo:"
+  invalidFiatCode: "❌ El código fiat no fue reconocido, intenta de nuevo:",
+  orderAlreadyRated: "❌ La contraparte ya había sido calificada."
 };

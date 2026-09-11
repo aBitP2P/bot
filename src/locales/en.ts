@@ -92,6 +92,7 @@ export default {
     margin,
     rating,
     tradesCount,
+    ratingCount,
     id,
   }: {
     action: string;
@@ -103,6 +104,7 @@ export default {
     hashtag: string;
     margin: number;
     rating: number;
+    ratingCount: number;
     tradesCount: number;
     id: string;
   }) =>
@@ -113,7 +115,7 @@ export default {
     `⏳ Using the bot for ${daysUsing} days\n\n` +
     `${hashtag}\n` +
     `📈 Rate: ${margin === 0 ? "At market price" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
-    `${rating.toFixed(1)} ${"⭐".repeat(Number(rating.toFixed(0)))} (${tradesCount})\n\n` +
+    `${rating.toFixed(1)} ${"⭐".repeat(Math.floor(rating))} (${ratingCount})\n\n` +
     `\`${id}\``,
   orderPublishedSuccess: (orderId: string) =>
     "✅ *Order successfully published in the channel!*\n" +
@@ -283,6 +285,10 @@ export default {
     `The escrow is ready to be claimed. Run the following command to start the withdrawal to your wallet:\n\n` +
     `\`/claim ${orderId}\``,
 
+  // --------------------------- Rating -----------------------------------
+  rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",
+  ratingDone: (stars: number) => `⭐ You have rated your counterpart with ${stars} stars.`,
+
   // ─────────────────────────── Claim & Refund ───────────────────────────
   askClaimPassword: (
     minerFee: number,
@@ -443,5 +449,6 @@ export default {
   invalidBuyerAddress:
     "❌ That Bitcoin address is invalid. Please send a correct address:",
   maxOrdersReached: "❌ You reached the limit of orders created by you.",
-  invalidFiatCode: "❌ Entered fiat code is invalid, please try again:"
+  invalidFiatCode: "❌ Entered fiat code is invalid, please try again:",
+  orderAlreadyRated: "❌ The counterparty had already been rated."
 };

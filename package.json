@@ -1,10 +1,10 @@
 {
   "name": "abitp2p",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=esnext --minify --packages=external --outfile=dist/index.js",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
   },

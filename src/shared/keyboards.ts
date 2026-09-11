@@ -66,3 +66,13 @@ export function buildSettleDisputeKeyboard(
     [Markup.button.callback(btnRefund, `settle_refund_${orderId}`)],
   ]);
 }
+
+export function buildRatingKeyboard(orderId: string) {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("⭐⭐⭐⭐⭐", `rate_5_${orderId}`)],
+    [Markup.button.callback("⭐⭐⭐⭐", `rate_4_${orderId}`)],
+    [Markup.button.callback("⭐⭐⭐", `rate_3_${orderId}`)],
+    [Markup.button.callback("⭐⭐", `rate_2_${orderId}`)],
+    [Markup.button.callback("⭐", `rate_1_${orderId}`)]
+  ])
+}

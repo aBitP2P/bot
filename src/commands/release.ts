@@ -3,6 +3,10 @@ import type { CommandContext } from "../types.js";
 import { getUser } from "../db/users.js";
 import { dictionaries, type Language } from "../locales/index.js";
 import { isAdmin } from "../utils/admin.js";
+import { buildRatingKeyboard } from "../shared/keyboards.js";
+import { db } from "../db/index.js";
+import { users } from "../db/schema.js";
+import { inArray, sql } from "drizzle-orm";
 
 export async function releaseCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -34,6 +38,11 @@ export async function releaseCommand(ctx: CommandContext) {
   );
   if (!didRelease) return ctx.reply(dict.invalidOrderStatus);
 
+  await db
+    .update(users)
+    .set({ tradesCount: sql`${users.tradesCount} + 1` })
+    .where(inArray(users.telegramId, [sellerId!, buyerId!]));
+
   const buyer = await getUser(buyerId!);
   const dictBuyer = dictionaries[(buyer?.language as Language) || "es"];
 
@@ -42,5 +51,12 @@ export async function releaseCommand(ctx: CommandContext) {
   });
   await ctx.telegram.sendMessage(buyerId!, dictBuyer.releaseToBuyer(order.id), {
     parse_mode: "Markdown",
+  });
+
+  await ctx.reply(dict.rateCounterpartyMessage, {
+    ...buildRatingKeyboard(order.id)
+  });
+  await ctx.telegram.sendMessage(buyerId!, dictBuyer.rateCounterpartyMessage, {
+    ...buildRatingKeyboard(order.id)
   });
 }

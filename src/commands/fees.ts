@@ -1,5 +1,5 @@
 import type { CommandContext } from "../types.js";
-import { getLiveMinerFeeList } from "../utils/bitcoin.js";
+import { getLiveMinerFeeList } from "../core/bitcoin/index.js";
 
 
 export async function feesCommand(ctx: CommandContext) {

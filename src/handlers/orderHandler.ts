@@ -11,6 +11,11 @@ import { type Language, dictionaries, t } from "../locales/index.js";
 import { Markup } from "telegraf";
 import { initializeEscrow } from "./escrowHandler.js";
 import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
+import {
+  buildMakerConfirmKeyboard,
+  buildTakerConfirmKeyboard,
+} from "../shared/keyboards.js";
+import { getSatsAmount } from "../utils/price.js";
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 export async function handleOrderCancelledRepublish(
   ctx: CallbackContext | CommandContext,
@@ -129,10 +134,7 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
     }),
     {
       parse_mode: "Markdown",
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback(dict.btnYes, `taker_yes_${order.id}`)],
-        [Markup.button.callback(dict.btnNo, `taker_cancel_order_${order.id}`)],
-      ]),
+      ...buildTakerConfirmKeyboard(dict.btnYes, dict.btnNo, order.id),
     },
   );
 }
@@ -162,7 +164,10 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
     .set({ fiatAmountLocked: exactAmount })
     .where(eq(orders.id, orderId));
 
-  await proceedAfterTakerAmount(ctx, order);
+  await proceedAfterTakerAmount(ctx, {
+    ...order, 
+    fiatAmountLocked: exactAmount
+  });
 }
 
 export async function proceedAfterTakerAmount(ctx: BotContext, order: any) {
@@ -171,7 +176,14 @@ export async function proceedAfterTakerAmount(ctx: BotContext, order: any) {
 
   if (isTakerBuyer) {
     ctx.session.awaitingAddressForOrder = order.id;
-    await ctx.reply(dict.askBuyerAddress, { parse_mode: "Markdown" });
+    const estimatedSats = await calculateSatsBeforeFees({
+      fiatAmountLocked: order.fiatAmountLocked!,
+      fiatCode: order.fiatCode,
+      margin: order.margin,
+    });
+    await ctx.reply(dict.askBuyerAddress(estimatedSats), {
+      parse_mode: "Markdown",
+    });
   } else {
     await db
       .update(orders)
@@ -180,6 +192,28 @@ export async function proceedAfterTakerAmount(ctx: BotContext, order: any) {
     await ctx.reply(dict.waitMaker, { parse_mode: "Markdown" });
     await notifyMakerForConfirmation(ctx, order);
   }
+}
+
+async function calculateSatsBeforeFees({
+  fiatAmountLocked,
+  fiatCode,
+  margin,
+}: {
+  fiatAmountLocked: number;
+  fiatCode: string;
+  margin: number;
+}): Promise<number> {
+  const estimatedSatsBeforeFee = await getSatsAmount(
+    fiatAmountLocked,
+    fiatCode,
+    margin,
+  );
+  const botFeePercent = parseFloat(process.env.BOT_FEE!);
+  const totalBotFeeSats = Math.floor(
+    estimatedSatsBeforeFee * (botFeePercent / 100),
+  );
+  const partyFeeSats = Math.floor(totalBotFeeSats / 2);
+  return estimatedSatsBeforeFee - partyFeeSats;
 }
 
 export async function notifyMakerForConfirmation(
@@ -221,10 +255,7 @@ export async function notifyMakerForConfirmation(
     }),
     {
       parse_mode: "Markdown",
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback(dict.btnYes, `maker_yes_${order.id}`)],
-        [Markup.button.callback(dict.btnNo, `maker_deny_${order.id}`)],
-      ]),
+      ...buildMakerConfirmKeyboard(dict.btnYes, dict.btnNo, order.id),
     },
   );
 }
@@ -248,7 +279,12 @@ export async function handleMakerConfirm(
 
   if (isMakerBuyer) {
     ctx.session.awaitingAddressForOrder = orderId;
-    await ctx.reply(dict.askBuyerAddress, { parse_mode: "Markdown" });
+    const estimatedSats = await calculateSatsBeforeFees({ 
+      fiatAmountLocked: order.fiatAmountLocked!,
+      fiatCode: order.fiatCode,
+      margin: order.margin
+    })
+    await ctx.reply(dict.askBuyerAddress(estimatedSats), { parse_mode: "Markdown" });
   } else {
     await ctx.telegram.sendMessage(
       order.takerId!,

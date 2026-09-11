@@ -5,10 +5,10 @@ import {
 } from "../db/orders.js";
 import { getUser } from "../db/users.js";
 import { dictionaries, type Language } from "../locales/index.js";
-import type { CallbackContext, CommandContext, OrderType } from "../types.js";
+import type { CallbackContext, CommandContext } from "../types.js";
 import { handleOrderCancelledRepublish } from "../handlers/orderHandler.js";
-import { Markup } from "telegraf";
 import { TERMINAL_STATUSES } from "../shared/constants.js";
+import { buildCancelOrderKeyboard } from "../shared/keyboards.js";
 
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -20,21 +20,8 @@ export async function cancelCommand(ctx: CommandContext) {
   if (args.length < 2) {
     let userOrders = await getUserOrders(userId);
     if (userOrders.length === 0) return ctx.reply(dict.noOrdersFound);
-    const groupBy = (items: any, size: number) =>
-      Array.from({ length: Math.ceil(items.length / size) }, (_, index) =>
-        items.slice(index * size, (index + 1) * size),
-      );
-
-    const buttons = userOrders.map((o) =>
-      Markup.button.callback(
-        `${o.id.slice(0, 2)}..${o.id.slice(-2)} - ${o.type} - ${o.fiatCode}`,
-        `cancelCommand_${o.id}`,
-      ),
-    );
-
-    const rows = groupBy(buttons, 3);
     await ctx.reply(dict.selectOrderToCancel , {
-      ...Markup.inlineKeyboard(rows)
+      ...buildCancelOrderKeyboard(userOrders)
     });
     return;
   }
@@ -50,7 +37,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
   if (!order) return ctx.reply(dict.orderNotFound);
 
-  if (TERMINAL_STATUSES.includes(order.status)) {
+  if (TERMINAL_STATUSES.includes(order.status as any)) {
     return ctx.reply(dict.cancelNotAllowed);
   }
 

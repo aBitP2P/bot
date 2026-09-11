@@ -1,7 +1,7 @@
+import "dotenv/config"
 import es from '../src/locales/es.js'; 
 import en from '../src/locales/en.js'; 
 
-// Agrega aquí más idiomas en el futuro si los necesitas
 const locales = {
   en
 };

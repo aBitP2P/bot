@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { CommandContext } from "../types.js";
-import { generateWif, getPubkeyFromWif } from "../utils/bitcoin.js";
+import { generateWif, getPubkeyFromWif } from "../core/bitcoin/index.js";
 import { encryptData } from "../utils/crypto.js";
 import { users } from "../db/schema.js";
 import { db } from "../db/index.js";

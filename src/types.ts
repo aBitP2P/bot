@@ -2,28 +2,7 @@ import { Context, type NarrowedContext } from 'telegraf';
 import type { CallbackQuery, Message, Update } from 'telegraf/types';
 import type { orders, users } from './db/schema.js';
 import type { dictionaries } from './locales/index.js';
-
-export type OrderType = 'BUY' | 'SELL';
-
-export type WizardStep = 
-  | 'IDLE' 
-  | 'SET_PASS'
-  | 'CLAIM_PASSWORD'
-  | 'CLAIM_REFUND_ADDRESS'
-  | 'CLAIM_REFUND_CONFIRM'
-  | 'WAITING_FIAT' 
-  | 'WAITING_AMOUNT' 
-  | 'WAITING_MARGIN' 
-  | 'WAITING_PAYMENT_METHOD';
-
-export interface OrderDraft {
-  type?: OrderType;
-  fiat?: string;
-  amount?: string;
-  margin?: number;
-  paymentMethod?: string;
-  refundAddress?: string;
-}
+import type { WizardStep, OrderDraft } from './wizards/types.js';
 
 export type UserRecord = typeof users.$inferSelect;
 export type OrderRecord = typeof orders.$inferSelect;

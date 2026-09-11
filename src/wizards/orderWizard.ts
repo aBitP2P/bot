@@ -1,5 +1,6 @@
 import { Markup } from 'telegraf';
-import { type BotContext, type CommandContext, type OrderType, type WizardStep } from '../types.js';
+import { type BotContext, type CommandContext } from '../types.js';
+import { type WizardStep, type OrderType } from './types.js';
 import { t, type Language, dictionaries } from '../locales/index.js';
 import { db } from '../db/index.js';
 import { orders } from '../db/schema.js';
@@ -7,7 +8,8 @@ import { eq } from 'drizzle-orm';
 import crypto from "node:crypto"
 import { getUser } from '../db/users.js';
 import { createOrder, getOrdersCreatedBy } from '../db/orders.js';
-import fiatCodes from '../utils/allowedFiatCodes.js';
+import { FiatCodes } from '../shared/constants.js';
+import { buildMarginKeyboard, buildTakeOrderKeyboard } from '../shared/keyboards.js';
 
 const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -89,10 +91,12 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
   async function updatePreview(newStep: WizardStep, markup?: any, errorMessage?: string) {
     if (chatId && previewId) {
       try {
+        let d = { parse_mode: 'Markdown' } as any
+        if (markup) d = { ...d, ...markup }
         await ctx.telegram.editMessageText(
           chatId, previewId, undefined,
           getWizardPreviewText(ctx.session.draft, newStep, lang, errorMessage),
-          { parse_mode: 'Markdown', reply_markup: markup }
+          d
         );
       } catch (e) { }
     }
@@ -101,7 +105,10 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
   switch (step) {
     case 'WAITING_FIAT':
       const f = text.toUpperCase();
-      if (!f || !(f in fiatCodes)) return true;
+      if (!f || !(f in FiatCodes)) {
+        await updatePreview('WAITING_FIAT', null, ctx.dict.invalidFiatCode);
+        return true;
+      };
       ctx.session.draft.fiat = f.toUpperCase();
       ctx.session.step = 'WAITING_AMOUNT';
       await updatePreview('WAITING_AMOUNT');
@@ -125,7 +132,7 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
       const [min, max] = text.split('-').map(Number) as [number, number];
       if (max !== undefined && min >= max) return true;
-      const minFiatValue = fiatCodes[ctx.session.draft.fiat!]!.min;
+      const minFiatValue = FiatCodes[ctx.session.draft.fiat!]!.min;
       if (min < minFiatValue) {
         await updatePreview('WAITING_AMOUNT', undefined, ctx.dict.fiatValueBelowMinimun(ctx.session.draft.fiat!, minFiatValue));
         return true;
@@ -134,18 +141,12 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
       ctx.session.draft.amount = text;
       ctx.session.step = 'WAITING_MARGIN';
 
-      const marginKeyboard = [
-        [-5, -4, -3, -2, -1].map(m => Markup.button.callback(`${m}%`, `margin_${m}`)),
-        [Markup.button.callback(ctx.dict.marketPrice, 'margin_0')],
-        [1, 2, 3, 4, 5].map(m => Markup.button.callback(`+${m}%`, `margin_${m}`))
-      ];
-
-      await updatePreview('WAITING_MARGIN', { inline_keyboard: marginKeyboard });
+      await updatePreview('WAITING_MARGIN', buildMarginKeyboard(ctx.dict.marketPrice));
       return true;
 
     case 'WAITING_PAYMENT_METHOD':
       if (!text || text.trim().length === 0) return true;
-      const sanitized = text.replace(/[&/\\#,+~%.'":*?<>{}]/g, '');
+      const sanitized = text.replace(/[&/\\#,+~%.'":*?<>{}_`\[\]()]/g, '');
       if (sanitized.trim().length === 0) return true;
 
       ctx.session.draft.paymentMethod = sanitized;
@@ -233,9 +234,7 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
 
   const sentChannelMsg = await ctx.telegram.sendMessage(CHANNEL_ID, orderMessage, {
     parse_mode: "Markdown",
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback(buttonText, `take_order_${orderId}`)]
-    ])
+    ...buildTakeOrderKeyboard(buttonText, orderId)
   });
 
   await db.update(orders).set({ channelMessageId: sentChannelMsg.message_id }).where(eq(orders.id, orderId));

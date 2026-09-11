@@ -1,7 +1,7 @@
 import { eq, or } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { orders, users } from "../db/schema.js";
-import { checkEscrowFunding } from "../utils/bitcoin.js";
+import { checkEscrowFunding } from "../core/bitcoin/index.js";
 import { dictionaries, type Language } from "../locales/index.js";
 import { Telegraf } from "telegraf";
 import { type BotContext } from "../types.js";

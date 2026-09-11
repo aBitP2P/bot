@@ -11,6 +11,7 @@ import type { BotContext, CommandContext, CallbackContext } from "../types.js";
 import { generateVerificationCode } from "../utils/crypto.js";
 import { isAdmin } from "../utils/admin.js";
 import { Markup } from "telegraf";
+import { buildSettleDisputeKeyboard } from "../shared/keyboards.js";
 
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
 
@@ -67,7 +68,7 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
     orderId,
     DISPUTE_ELIGIBLE_STATUSES,
     "DISPUTE",
-    { cancelRequestedBy: null }
+    { cancelRequestedBy: null },
   );
 
   if (!didTransition) {
@@ -216,26 +217,12 @@ export async function settleCommand(ctx: CommandContext, orderId: string) {
 
   await ctx.reply(dict.settlePrompt(orderId, buyerHandle, sellerHandle), {
     parse_mode: "Markdown",
-    ...Markup.inlineKeyboard([
-      [
-        Markup.button.callback(
-          dict.settleBtnBuyer(buyerHandle),
-          `settle_buyer_${orderId}`,
-        ),
-      ],
-      [
-        Markup.button.callback(
-          dict.settleBtnSeller(sellerHandle),
-          `settle_seller_${orderId}`,
-        ),
-      ],
-      [
-        Markup.button.callback(
-          dict.settleBtnRefund,
-          `settle_refund_${orderId}`,
-        ),
-      ],
-    ]),
+    ...buildSettleDisputeKeyboard(
+      dict.settleBtnBuyer(buyerHandle),
+      dict.settleBtnSeller(sellerHandle),
+      dict.settleBtnRefund,
+      order.id,
+    ),
   });
 }
 

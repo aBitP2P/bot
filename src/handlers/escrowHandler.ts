@@ -5,7 +5,7 @@ import { orders } from "../db/schema.js";
 import { getUser } from "../db/users.js";
 import { dictionaries, type Language } from "../locales/index.js";
 import type { BotContext } from "../types.js";
-import { generateEscrow } from "../utils/bitcoin.js";
+import { generateEscrow } from "../core/bitcoin/index.js";
 import { getSatsAmount } from "../utils/price.js";
 import QRCode from "qrcode";
 

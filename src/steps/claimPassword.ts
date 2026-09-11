@@ -5,7 +5,7 @@ import { db } from "../db/index.js";
 import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
 import { orders, users } from "../db/schema.js";
 import type { CommandContext } from "../types.js";
-import { broadcastReleaseTx, broadcastRefundTx } from "../utils/bitcoin.js";
+import { broadcastReleaseTx, broadcastRefundTx } from "../core/bitcoin/index.js";
 import { decryptData } from "../utils/crypto.js";
 import { getUser } from "../db/users.js";
 import { dictionaries, type Language } from "../locales/index.js";

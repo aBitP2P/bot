@@ -22,7 +22,7 @@ import { message } from "telegraf/filters";
 import { orders } from "./db/schema.js";
 import { db } from "./db/index.js";
 import { eq } from "drizzle-orm";
-import { isValidAddress } from "./utils/bitcoin.js";
+import { isValidAddress } from "./core/bitcoin/index.js";
 import { initializeEscrow } from "./handlers/escrowHandler.js";
 import { startEscrowMonitor } from "./services/monitor.js";
 import { userMiddleware } from "./middlewares/auth.js";
@@ -204,7 +204,10 @@ bot.on(message("text"), async (ctx, next) => {
       .where(eq(orders.id, order.id));
     ctx.session.awaitingAmountForOrder = undefined;
 
-    return proceedAfterTakerAmount(ctx, order);
+    return proceedAfterTakerAmount(ctx, {
+      ...order,
+      fiatAmountLocked: inputAmount // Para evitar volver a hacer un fetch después
+    });
   }
 
   const orderId = ctx.session.awaitingAddressForOrder;

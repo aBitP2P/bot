@@ -2,7 +2,7 @@ import { getOrder } from "../db/orders.js";
 import { getUser } from "../db/users.js";
 import { dictionaries, type Language } from "../locales/index.js";
 import type { CommandContext } from "../types.js";
-import { getLiveMinerFee, checkEscrowFunding } from "../utils/bitcoin.js";
+import { getLiveMinerFee, checkEscrowFunding } from "../core/bitcoin/index.js";
 import { orders } from "../db/schema.js";
 
 export async function claimCommand(ctx: CommandContext) {

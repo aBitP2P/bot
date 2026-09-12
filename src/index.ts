@@ -19,7 +19,7 @@ import {
 } from "./handlers/orderHandler.js";
 import { getOrder, tryTransitionOrderStatus } from "./db/orders.js";
 import { message } from "telegraf/filters";
-import { orderRatings, orders, users } from "./db/schema.js";
+import { orders } from "./db/schema.js";
 import { db } from "./db/index.js";
 import { eq } from "drizzle-orm";
 import { isValidAddress } from "./core/bitcoin/index.js";
@@ -46,8 +46,9 @@ import {
 } from "./steps/index.js";
 import { resolveDispute } from "./handlers/disputeHandler.js";
 import { handleOrderCancelFromCommand } from "./commands/cancel.js";
-import crypto from "node:crypto"
 import { handleRating } from "./handlers/ratingHandler.js";
+import { Strings } from "./shared/constants.js";
+import { handleSetLangAction } from "./commands/setlang.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -108,6 +109,10 @@ bot.on("callback_query", async (ctx, next) => {
   if (data.startsWith("taker_cancel_order_")) {
     const orderId = data.replace("taker_cancel_order_", "");
     return handleOrderCancelledRepublish(ctx, orderId);
+  }
+
+  if (data.startsWith("setlang_")) {
+    return handleSetLangAction(ctx);
   }
 
   if (data.startsWith("cancelCommand_")) {
@@ -178,7 +183,23 @@ bot.on("callback_query", async (ctx, next) => {
 });
 
 bot.start(async (ctx) => {
-  await ctx.reply(t("es", "welcome"), { parse_mode: "Markdown" });
+  const text = 
+    `🤖 *¡Bienvenido a aBitP2P! / Welcome to aBitP2P!*\n\n` +
+    `🇪🇸 *ESPAÑOL*\n` +
+    `⚠️ *Paso 1:* Usa /setpass para configurar tu contraseña y activar tu cuenta.\n` +
+    `🌍 *Idioma:* Usa /setlang para cambiar a inglés (u otro idioma).\n` +
+    `📚 *Ayuda:* Usa /help para ver los comandos.\n` +
+    `📢 *Comunidad:* Chat general ${Strings.GENERAL_CHAT_TAG} | Órdenes ${Strings.ORDER_CHANNEL_TAG}\n` +
+    `⚡️ *Nota:* Estamos en fase inicial. ¡Publica tus ofertas y ayúdanos a crear liquidez!\n\n` +
+    `➖ ➖ ➖ ➖ ➖ ➖ ➖\n\n` +
+    `🇬🇧 *ENGLISH*\n` +
+    `⚠️ *Step 1:* Use /setpass to set your password and activate your account.\n` +
+    `🌍 *Language:* Use /setlang to change the bot's language.\n` +
+    `📚 *Help:* Use /help to see all commands.\n` +
+    `📢 *Community:* General chat ${Strings.GENERAL_CHAT_TAG} | Orders ${Strings.ORDER_CHANNEL_TAG}\n` +
+    `⚡️ *Note:* We are in early stages. Place your offers to help us build liquidity!`;
+
+  await ctx.reply(text, { parse_mode: "Markdown" });
 });
 
 bot.on(message("text"), async (ctx, next) => {

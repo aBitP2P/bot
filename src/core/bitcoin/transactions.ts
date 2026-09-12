@@ -44,7 +44,7 @@ export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<
   }
 
   const baseSats = order.amountSats;
-  const botFeePercent = parseFloat(process.env.BOT_FEE || "0.8");
+  const botFeePercent = parseFloat(process.env.BOT_FEE!);
   const buyerFee = Math.floor(baseSats * (botFeePercent / 100) / 2);
   const minerFee = await getLiveMinerFee(null, 2, utxos.length);
 

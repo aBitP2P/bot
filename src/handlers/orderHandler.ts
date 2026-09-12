@@ -15,7 +15,7 @@ import {
   buildMakerConfirmKeyboard,
   buildTakerConfirmKeyboard,
 } from "../shared/keyboards.js";
-import { getSatsAmount } from "../utils/price.js";
+import { getRateInfoFor } from "../utils/price.js";
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 export async function handleOrderCancelledRepublish(
   ctx: CallbackContext | CommandContext,
@@ -204,7 +204,7 @@ async function calculateSatsBeforeFees({
   fiatCode: string;
   margin: number;
 }): Promise<number> {
-  const estimatedSatsBeforeFee = await getSatsAmount(
+  const { satsAmount: estimatedSatsBeforeFee } = await getRateInfoFor(
     fiatAmountLocked,
     fiatCode,
     margin,

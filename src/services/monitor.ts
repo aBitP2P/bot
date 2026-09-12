@@ -43,13 +43,21 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
         const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
 
         const seller = await getUser(sellerId!);
+        const buyer = await getUser(order.takerId!);
+
         const dictSeller = dictionaries[(seller?.language as Language) || "es"];
+        const dictBuyer = dictionaries[(buyer?.language as Language) || "es"];
 
         await bot.telegram.sendMessage(
           sellerId!,
           dictSeller.escrowUnconfirmed(fundingInfo.txid),
           { parse_mode: "Markdown" },
         );
+        await bot.telegram.sendMessage(
+          buyer!.telegramId,
+          dictBuyer.escrowUnconfirmed(fundingInfo.txid),
+          { parse_mode: "Markdown" }
+        )
       }
 
       // 2. Transacción Confirmada (1-conf)

@@ -1,12 +1,14 @@
 import en from './en.js';
 import es from './es.js';
+import pt from './pt.js';
 
 const dictionaries = {
   es,
-  en
+  en,
+  pt
 };
 
-export const localeData = {
+export const LocaleData = {
   "ES": {
     label: "Español",
     emoji: "🇪🇸"
@@ -14,6 +16,10 @@ export const localeData = {
   "EN": {
     label: "English",
     emoji: "🇺🇸"
+  },
+  "PT": {
+    label: "Português",
+    emoji: "🇧🇷"
   }
 }
 
@@ -33,8 +39,8 @@ export function t(lang: Language, key: TranslationKey): string {
 
 export function getLocalesList() {
   let str = "";
-  for (const locale of Object.keys(localeData)) {
-    let data = localeData[locale as keyof typeof localeData];
+  for (const locale of Object.keys(LocaleData)) {
+    let data = LocaleData[locale as keyof typeof LocaleData];
     str += `${data.emoji} \`${locale}\` - ${data.label}\n`
   }
   return str;

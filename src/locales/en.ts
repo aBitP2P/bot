@@ -1,5 +1,5 @@
 import type { orders } from "../db/schema.js";
-import { Strings, FiatCodes, OrderStatusLabelsEN } from "../shared/constants.js"; 
+import { Strings, getFiatEmoji, OrderStatusLabelsEN } from "../shared/constants.js"; 
 import { mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
 
 
@@ -7,8 +7,6 @@ type OrderRow = typeof orders.$inferSelect;
 
 export default {
   // ─────────────────────────── General & UI ───────────────────────────
-  welcome:
-    "🤖 Welcome to aBitP2P!\n\n⚠️ *IMPORTANT:* Before trading, set up your secure password with /setpass to complete your profile configuration.\n\nUse /help to see the full list of commands. Remember to join our General Chat " + Strings.GENERAL_CHAT_TAG + " and to subscribe to orders channel " + Strings.ORDER_CHANNEL_TAG + " ✨",
   helpMessage: () =>
     `🤖 *aBitP2P — Help Center*\n\n` +
     `🛒 *Market*\n` +
@@ -24,7 +22,7 @@ export default {
     `_Ex: /release ab12cd-34ef56_\n\n` +
     `⚙️ *Account and System*\n` +
     `/setpass — Encrypt your profile with a password\n` +
-    `/setlang — Switch language, ex: /setlang ES\n` +
+    `/setlang — Switch language\n` +
     "/fees - Check the fees applied for your orders \n" +
     `/exit — Cancel current action\n\n` +
     `📢 Channel: ${Strings.ORDER_CHANNEL_TAG} \n` +
@@ -59,6 +57,7 @@ export default {
     `✅ *Password configured successfully.* Profile encrypted and ready to use.\n\n` +
     "_Keep in mind that it is only for bot usage. The funds you buy will be sent to any address you desire at the moment, the bot does not directly custody the funds at any time._",
   invalidLanguage: "❌ Invalid language. The available languages are:\n\n",
+  selectLanguage: "👇 Select your preferred language",
   languageUpdateSuccess: "✅ Language updated successfully.",
 
   // ─────────────────────────── Market & Order Creation ───────────────────────────
@@ -66,6 +65,21 @@ export default {
   promptAmount: "Indicate the amount or range (Ex: 50-1000 or 100)",
   promptMargin: "Select the margin using the buttons below 👇",
   promptPaymentMethod: "Type the payment method (Ex: Zelle, Bank Transfer)",
+  invalidAmountAfterMargin:
+    ({
+      margin,
+      satsAmount,
+      minFiatRequired,
+      fiatCode,
+    }: {
+      margin: number,
+      satsAmount: number,
+      minFiatRequired: number,
+      fiatCode: string
+    }) => `⚠️ *Insufficient amount after applying margin*\n\n` +
+    `After applying your ${margin}% margin, the total to receive dropped to ${satsAmount.toLocaleString()} sats.\n\n` +
+    `To meet the minimum of 60,000 sats, you must start the order with at least *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
+    `🔄 Please start the order creation again.`,
   wizardPreview: (
     type: string,
     fiat: string,
@@ -109,7 +123,7 @@ export default {
     id: string;
   }) =>
     `**${action} Bitcoin**\n\n` +
-    `For ${amountFiat} ${fiat} ${FiatCodes[fiat]?.emoji}\n` +
+    `For ${amountFiat} ${fiat} ${getFiatEmoji(fiat)}\n` +
     `💳 ${payDirection} ${method}\n` +
     `🤝 Has ${tradesCount} successful trades\n` +
     `⏳ Using the bot for ${daysUsing} days\n\n` +
@@ -235,7 +249,8 @@ export default {
   escrowUnconfirmed: (txid: string) =>
     `⏳ *Transaction detected on the network.*\n\n` +
     `ID: \`${txid}\`\n` +
-    `_Waiting for 1 confirmation to notify the counterparty and activate the contract..._`,
+    `[View in explorer](${mempoolBaseURL}/tx/${txid})\n` + 
+    `_Waiting for 1 confirmation to proceed safely..._`,
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *Escrow Funded and Confirmed!*\n\n` +
     `The funds are secured in the smart contract.\n\n` +
@@ -450,5 +465,7 @@ export default {
     "❌ That Bitcoin address is invalid. Please send a correct address:",
   maxOrdersReached: "❌ You reached the limit of orders created by you.",
   invalidFiatCode: "❌ Entered fiat code is invalid, please try again:",
-  orderAlreadyRated: "❌ The counterparty had already been rated."
+  orderAlreadyRated: "❌ The counterparty had already been rated.",
+  couldNotApplyMargin: "❌ Unknown error applying margin, please try again.",
+  couldNotFetchPrice: "❌ Unknown error fetching currency code, please try again:"
 };

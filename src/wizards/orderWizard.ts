@@ -1,64 +1,83 @@
-import { Markup } from 'telegraf';
-import { type BotContext, type CommandContext } from '../types.js';
-import { type WizardStep, type OrderType } from './types.js';
-import { t, type Language, dictionaries } from '../locales/index.js';
-import { db } from '../db/index.js';
-import { orders } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
-import crypto from "node:crypto"
-import { getUser } from '../db/users.js';
-import { createOrder, getOrdersCreatedBy } from '../db/orders.js';
-import { FiatCodes } from '../shared/constants.js';
-import { buildMarginKeyboard, buildTakeOrderKeyboard } from '../shared/keyboards.js';
+import { type BotContext, type CommandContext } from "../types.js";
+import { type WizardStep, type OrderType } from "./types.js";
+import { t, type Language, dictionaries } from "../locales/index.js";
+import { db } from "../db/index.js";
+import { orders } from "../db/schema.js";
+import { eq } from "drizzle-orm";
+import crypto from "node:crypto";
+import { getUser } from "../db/users.js";
+import { createOrder, getOrdersCreatedBy } from "../db/orders.js";
+import {
+  buildMarginKeyboard,
+  buildTakeOrderKeyboard,
+} from "../shared/keyboards.js";
+import { getMinFiatAmount, getRateInfoFor, ratesCache } from "../utils/price.js";
 
 const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
-
 
 function getPromptForStep(step: WizardStep, lang: Language): string {
   const dict = dictionaries[lang];
   switch (step) {
-    case 'WAITING_FIAT': return dict.promptFiat;
-    case 'WAITING_AMOUNT': return dict.promptAmount;
-    case 'WAITING_MARGIN': return dict.promptMargin;
-    case 'WAITING_PAYMENT_METHOD': return dict.promptPaymentMethod;
-    default: return '';
+    case "WAITING_FIAT":
+      return dict.promptFiat;
+    case "WAITING_AMOUNT":
+      return dict.promptAmount;
+    case "WAITING_MARGIN":
+      return dict.promptMargin;
+    case "WAITING_PAYMENT_METHOD":
+      return dict.promptPaymentMethod;
+    default:
+      return "";
   }
 }
 
-function getWizardPreviewText(draft: any, step: WizardStep, lang: Language, customPrompt?: string): string {
+function getWizardPreviewText(
+  draft: any,
+  step: WizardStep,
+  lang: Language,
+  customPrompt?: string,
+): string {
   const dict = dictionaries[lang];
 
-  const typeText = draft.type === 'BUY' ? dict.buyType : dict.sellType;
-  const fiatText = draft.fiat || ' ';
-  const amountText = draft.amount || ' ';
+  const typeText = draft.type === "BUY" ? dict.buyType : dict.sellType;
+  const fiatText = draft.fiat || " ";
+  const amountText = draft.amount || " ";
 
-  let marginText = ' ';
+  let marginText = " ";
   if (draft.margin !== undefined) {
     marginText = draft.margin > 0 ? `+${draft.margin}%` : `${draft.margin}%`;
   }
 
-  const methodText = draft.paymentMethod || ' ';
+  const methodText = draft.paymentMethod || " ";
   const promptText = customPrompt ?? getPromptForStep(step, lang);
 
-  return dict.wizardPreview(typeText, fiatText, amountText, marginText, methodText, promptText);
+  return dict.wizardPreview(
+    typeText,
+    fiatText,
+    amountText,
+    marginText,
+    methodText,
+    promptText,
+  );
 }
 
 export async function startOrderWizard(ctx: CommandContext, type: OrderType) {
   const userId = ctx.from.id;
   if (!userId) return;
-  if (!ctx.user.encryptedWif) return ctx.reply(ctx.dict.setYourPersonalPassword);
+  if (!ctx.user.encryptedWif)
+    return ctx.reply(ctx.dict.setYourPersonalPassword);
   let orderList = await getOrdersCreatedBy(userId);
   if (orderList.length >= 6) return await ctx.reply(ctx.dict.maxOrdersReached);
 
   const lang = ctx.user.language as Language;
 
   ctx.session = {
-    step: 'WAITING_FIAT',
-    draft: { type }
+    step: "WAITING_FIAT",
+    draft: { type },
   };
 
   const text = getWizardPreviewText(ctx.session.draft, ctx.session.step, lang);
-  const sentMessage = await ctx.reply(text, { parse_mode: 'Markdown' });
+  const sentMessage = await ctx.reply(text, { parse_mode: "Markdown" });
   ctx.session.previewMessageId = sentMessage.message_id;
 }
 
@@ -66,93 +85,136 @@ export async function cancelWizard(ctx: BotContext) {
   const userId = ctx.from?.id;
   if (!userId) return;
 
-  ctx.session = { step: 'IDLE', draft: {} };
+  ctx.session = { step: "IDLE", draft: {} };
   await ctx.reply(ctx.dict.cancelled);
 }
 
 export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
   const step = ctx.session.step;
-  if (!step || step === 'IDLE') return false;
+  if (!step || step === "IDLE") return false;
 
   const userId = ctx.from?.id;
   if (!userId) return false;
   const lang = ctx.user.language as Language;
 
   const message = ctx.message;
-  const text = message && 'text' in message ? message.text.trim() : '';
+  const text = message && "text" in message ? message.text.trim() : "";
 
   if (message) {
-    try { await ctx.deleteMessage(message.message_id); } catch (e) { }
+    try {
+      await ctx.deleteMessage(message.message_id);
+    } catch (e) {}
   }
 
   const chatId = ctx.chat?.id;
   const previewId = ctx.session.previewMessageId;
 
-  async function updatePreview(newStep: WizardStep, markup?: any, errorMessage?: string) {
+  async function updatePreview(
+    newStep: WizardStep,
+    markup?: any,
+    errorMessage?: string,
+  ) {
     if (chatId && previewId) {
       try {
-        let d = { parse_mode: 'Markdown' } as any
-        if (markup) d = { ...d, ...markup }
+        let d = { parse_mode: "Markdown" } as any;
+        if (markup) d = { ...d, ...markup };
         await ctx.telegram.editMessageText(
-          chatId, previewId, undefined,
+          chatId,
+          previewId,
+          undefined,
           getWizardPreviewText(ctx.session.draft, newStep, lang, errorMessage),
-          d
+          d,
         );
-      } catch (e) { }
+      } catch (e) {}
     }
   }
 
   switch (step) {
-    case 'WAITING_FIAT':
-      const f = text.toUpperCase();
-      if (!f || !(f in FiatCodes)) {
-        await updatePreview('WAITING_FIAT', null, ctx.dict.invalidFiatCode);
+    case "WAITING_FIAT":
+      const f = text.trim().toUpperCase();
+
+      if (!/^[A-Z]{3}$/.test(f)) {
+        await updatePreview("WAITING_FIAT", null, ctx.dict.invalidFiatCode);
         return true;
-      };
+      }
+
+      try {
+        if (!ratesCache.has(f)) {
+          const res = await fetch(`https://api.yadio.io/rate/${f}/BTC`);
+          if (!res.ok || !(await res.json()).rate) {
+            await updatePreview("WAITING_FIAT", null, ctx.dict.invalidFiatCode);
+            return true;
+          }
+        }
+      } catch (error) {
+        await updatePreview("WAITING_FIAT", null, ctx.dict.couldNotApplyMargin);
+        return true;
+      }
+
       ctx.session.draft.fiat = f.toUpperCase();
-      ctx.session.step = 'WAITING_AMOUNT';
-      await updatePreview('WAITING_AMOUNT');
+      ctx.session.step = "WAITING_AMOUNT";
+      await updatePreview("WAITING_AMOUNT");
       return true;
 
-    case 'WAITING_AMOUNT':
-      if (!text || !/^(\d+([.,]\d{1,2})?)(-(\d+([.,]\d{1,2})?))?$/.test(text)) return true;
+    case "WAITING_AMOUNT":
+      if (!text || !/^(\d+([.,]\d{1,2})?)(-(\d+([.,]\d{1,2})?))?$/.test(text))
+        return true;
 
-      const parts = text.split('-');
-      const amounts = parts.map(p => {
-        const num = Number(p.replace(',', '.'));
+      const parts = text.split("-");
+      const amounts = parts.map((p) => {
+        const num = Number(p.replace(",", "."));
         return num;
       });
 
-      let isFiatBig = amounts.some(amount => !isFinite(amount) || amount > Number.MAX_SAFE_INTEGER);
+      let isFiatBig = amounts.some(
+        (amount) => !isFinite(amount) || amount > Number.MAX_SAFE_INTEGER,
+      );
       if (isFiatBig) {
-        await updatePreview('WAITING_AMOUNT', undefined,
-            ctx.dict.fiatValueTooBig);
-          return true;
-      }
-
-      const [min, max] = text.split('-').map(Number) as [number, number];
-      if (max !== undefined && min >= max) return true;
-      const minFiatValue = FiatCodes[ctx.session.draft.fiat!]!.min;
-      if (min < minFiatValue) {
-        await updatePreview('WAITING_AMOUNT', undefined, ctx.dict.fiatValueBelowMinimun(ctx.session.draft.fiat!, minFiatValue));
+        await updatePreview(
+          "WAITING_AMOUNT",
+          undefined,
+          ctx.dict.fiatValueTooBig,
+        );
         return true;
       }
 
-      ctx.session.draft.amount = text;
-      ctx.session.step = 'WAITING_MARGIN';
+      const [min, max] = text.split("-").map(Number) as [number, number];
+      if (max !== undefined && min >= max) return true;
 
-      await updatePreview('WAITING_MARGIN', buildMarginKeyboard(ctx.dict.marketPrice));
+      const { appliedRate } = await getRateInfoFor(
+        min,
+        ctx.session.draft.fiat!,
+        0,
+      );
+
+      const minFiatValue = getMinFiatAmount(appliedRate);
+      if (min < minFiatValue) {
+        await updatePreview(
+          "WAITING_AMOUNT",
+          undefined,
+          ctx.dict.fiatValueBelowMinimun(ctx.session.draft.fiat!, minFiatValue),
+        );
+        return true;
+      }
+
+      ctx.session.draft.amount = text.replace(",", ".");
+      ctx.session.step = "WAITING_MARGIN";
+
+      await updatePreview(
+        "WAITING_MARGIN",
+        buildMarginKeyboard(ctx.dict.marketPrice),
+      );
       return true;
 
-    case 'WAITING_PAYMENT_METHOD':
+    case "WAITING_PAYMENT_METHOD":
       if (!text || text.trim().length === 0) return true;
-      const sanitized = text.replace(/[&/\\#,+~%.'":*?<>{}_`\[\]()]/g, '');
+      const sanitized = text.replace(/[&/\\#,+~%.'":*?<>{}_`\[\]()]/g, "");
       if (sanitized.trim().length === 0) return true;
 
       ctx.session.draft.paymentMethod = sanitized;
 
       await publishOrderToChannel(ctx, lang);
-      ctx.session = { step: 'IDLE', draft: {} };
+      ctx.session = { step: "IDLE", draft: {} };
       return true;
 
     default:
@@ -162,28 +224,79 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
 export async function handleWizardAction(ctx: BotContext) {
   const callbackQuery = ctx.callbackQuery as { data?: string };
-  if (!callbackQuery?.data?.startsWith('margin_')) return;
+  if (!callbackQuery?.data?.startsWith("margin_")) return;
 
   const userId = ctx.from?.id;
   if (!userId) return;
   const lang = ctx.user.language as Language;
+  const margin = parseInt(callbackQuery.data.replace("margin_", ""), 10);
 
-  ctx.session.draft.margin = parseInt(callbackQuery.data.replace('margin_', ''), 10);
-  ctx.session.step = 'WAITING_PAYMENT_METHOD';
+  const { amount, fiat } = ctx.session.draft;
 
   await ctx.answerCbQuery();
 
-  const chatId = ctx.chat?.id;
-  const previewId = ctx.session.previewMessageId;
+  try {
+    const min = parseFloat(amount!.split("-")[0]!);
+    const { satsAmount, appliedRate } = await getRateInfoFor(
+      min,
+      fiat!,
+      margin,
+    );
 
-  if (chatId && previewId) {
-    try {
-      const currentText = getWizardPreviewText(ctx.session.draft, ctx.session.step, lang);
+    if (satsAmount < 60000) {
+      const minFiatRequired = (60000 / 100_000_000) * appliedRate;
+      try {
+        await ctx.editMessageReplyMarkup(undefined);
+      } catch (e) {
+        console.error("Error al quitar botones del preview:", e);
+      }
+      await ctx.reply(
+        ctx.dict.invalidAmountAfterMargin({
+          margin,
+          minFiatRequired,
+          satsAmount,
+          fiatCode: fiat!,
+        }),
+        { parse_mode: "Markdown" },
+      );
 
-      await ctx.telegram.editMessageText(chatId, previewId, undefined, currentText, {
-        parse_mode: 'Markdown'
-      });
-    } catch (e) { }
+      ctx.session.step = "IDLE";
+      ctx.session.draft = {};
+      return;
+    }
+
+    ctx.session.draft.margin = margin;
+    ctx.session.step = "WAITING_PAYMENT_METHOD";
+
+    await ctx.answerCbQuery();
+
+    const chatId = ctx.chat?.id;
+    const previewId = ctx.session.previewMessageId;
+
+    if (chatId && previewId) {
+      try {
+        const currentText = getWizardPreviewText(
+          ctx.session.draft,
+          ctx.session.step,
+          lang,
+        );
+
+        await ctx.telegram.editMessageText(
+          chatId,
+          previewId,
+          undefined,
+          currentText,
+          {
+            parse_mode: "Markdown",
+          },
+        );
+      } catch (e) {}
+    }
+  } catch (error) {
+    console.error("Error validando el margen:", error);
+    await ctx.reply(
+      ctx.dict.couldNotApplyMargin,
+    );
   }
 }
 
@@ -196,15 +309,18 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
 
   const user = await getUser(userId);
 
-  const daysUsing = user ? Math.floor((Date.now() - user.createdAt) / 86400000) : 0;
+  const daysUsing = user
+    ? Math.floor((Date.now() - user.createdAt) / 86400000)
+    : 0;
   const tradesCount = user?.tradesCount || 0;
 
-  const action = type === 'SELL' ? dict.actionSell : dict.actionBuy;
-  const payDirection = type === 'SELL' ? dict.payDirectionSell : dict.payDirectionBuy;
+  const action = type === "SELL" ? dict.actionSell : dict.actionBuy;
+  const payDirection =
+    type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy;
   const hashtag = `#${type}${fiat}`;
 
-  const rawHex = crypto.randomBytes(6).toString('hex').slice(0, 12);
-  const orderId = rawHex.match(/.{1,6}/g)!.join('-');
+  const rawHex = crypto.randomBytes(6).toString("hex").slice(0, 12);
+  const orderId = rawHex.match(/.{1,6}/g)!.join("-");
 
   await createOrder({
     id: orderId,
@@ -213,7 +329,7 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
     amountFiat: amount!,
     fiatCode: fiat!,
     paymentMethod: paymentMethod!,
-    margin: margin!
+    margin: margin!,
   });
 
   const orderMessage = dict.channelOrder({
@@ -228,24 +344,37 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
     rating: user!.rating || 0,
     tradesCount: tradesCount,
     ratingCount: user!.ratingCount,
-    id: orderId
+    id: orderId,
   });
 
-  const buttonText = type === 'SELL' ? t(lang, 'btnBuyBitcoin') : t(lang, 'btnSellBitcoin');
+  const buttonText =
+    type === "SELL" ? t(lang, "btnBuyBitcoin") : t(lang, "btnSellBitcoin");
 
-  const sentChannelMsg = await ctx.telegram.sendMessage(CHANNEL_ID, orderMessage, {
-    parse_mode: "Markdown",
-    ...buildTakeOrderKeyboard(buttonText, orderId)
-  });
+  const sentChannelMsg = await ctx.telegram.sendMessage(
+    CHANNEL_ID,
+    orderMessage,
+    {
+      parse_mode: "Markdown",
+      ...buildTakeOrderKeyboard(buttonText, orderId),
+    },
+  );
 
-  await db.update(orders).set({ channelMessageId: sentChannelMsg.message_id }).where(eq(orders.id, orderId));
+  await db
+    .update(orders)
+    .set({ channelMessageId: sentChannelMsg.message_id })
+    .where(eq(orders.id, orderId));
 
   const chatId = ctx.chat?.id;
   const previewId = ctx.session.previewMessageId;
   if (chatId && previewId) {
     try {
-      await ctx.telegram.editMessageText(chatId, previewId, undefined, dict.orderPublishedSuccess(orderId), { parse_mode: 'Markdown' });
-    } catch (e) { }
+      await ctx.telegram.editMessageText(
+        chatId,
+        previewId,
+        undefined,
+        dict.orderPublishedSuccess(orderId),
+        { parse_mode: "Markdown" },
+      );
+    } catch (e) {}
   }
-
 }

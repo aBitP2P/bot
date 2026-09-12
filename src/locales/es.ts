@@ -1,18 +1,15 @@
 import type { orders } from "../db/schema.js";
-import { Strings, FiatCodes, OrderStatusLabelsES } from "../shared/constants.js"; 
+import {
+  Strings,
+  OrderStatusLabelsES,
+  getFiatEmoji,
+} from "../shared/constants.js";
 import { mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
 
 type OrderRow = typeof orders.$inferSelect;
 
 export default {
   // ─────────────────────────── General & UI ───────────────────────────
-  welcome:
-    "🤖 ¡aBitP2P te da la bienvenida!\n\n⚠️ *IMPORTANTE:* Antes de operar, configura tu contraseña segura con /setpass para completar la configuración de tu perfil.\n\nUsa /help para ver la lista de comandos completa. Recuerda unirte a nuestro chat general " +
-    Strings.GENERAL_CHAT_TAG +
-    " y suscribirte al canal de órdenes: " +
-    Strings.ORDER_CHANNEL_TAG +
-    " ✨" + "\n\n" + 
-    "👀 Actualmente el bot no tiene muchos usuarios, ¡pero siéntete libre de colocar tus órdenes de compra o venta! Apoyas a que el bot tenga más liquidez en general.",
   helpMessage: () =>
     `🤖 *aBitP2P — Centro de Ayuda*\n\n` +
     `🛒 *Mercado*\n` +
@@ -28,7 +25,7 @@ export default {
     `_Ej: /release ab12cd-34ef56_\n\n` +
     `⚙️ *Cuenta y Sistema*\n` +
     `/setpass — Encripta tu perfil a partir de una contraseña\n` +
-    `/setlang — Cambia de idioma, ej: /setlang EN\n` +
+    `/setlang — Cambia de idioma\n` +
     "/fees - Revisa como están las comisiones para tus órdenes \n" +
     `/exit — Cancelar la acción actual\n\n` +
     `📢 Canal: ${Strings.ORDER_CHANNEL_TAG}\n` +
@@ -57,12 +54,14 @@ export default {
     `*NO SE PUEDE CAMBIAR, asegúrate de escribirla correctamente y anotarla en algún lugar.*\n\n` +
     "🔑 *Por favor, escribe tu contraseña para configurar tu usuario:*",
   confirmPassword: "👉 Para confirmar, vuelve a escribir la contraseña: ",
-  passwordsDoNotMatch: "❌ Las contraseñas no coinciden. Inténtalo de nuevo con /setpass",
+  passwordsDoNotMatch:
+    "❌ Las contraseñas no coinciden. Inténtalo de nuevo con /setpass",
   passwordAlreadySet: "❌ Ya tienes una contraseña establecida previamente.",
   passwordSetSuccess:
     `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.\n\n` +
     "_Ten en cuenta que solo es para uso del bot. Los fondos que compres, se enviarán a cualquier dirección que desees al momento, el bot no custodia en ningún momento los fondos de manera directa._",
-  invalidLanguage: "❌ Idioma inválido. Los idiomas disponibles son:\n\n",
+  invalidLanguage: "❌ Idioma inválido.",
+  selectLanguage: "👇 Selecciona tu idioma preferido",
   languageUpdateSuccess: "✅ Idioma actualizado correctamente.",
 
   // ─────────────────────────── Market & Order Creation ───────────────────────────
@@ -70,6 +69,21 @@ export default {
   promptAmount: "Indica el monto o rango (Ej: 500-1000 o 100)",
   promptMargin: "Selecciona el margen en los botones de abajo 👇",
   promptPaymentMethod: "Escribe el método de pago (Ej: Zelle, Transferencia)",
+  invalidAmountAfterMargin:
+    ({
+      margin,
+      satsAmount,
+      minFiatRequired,
+      fiatCode,
+    }: {
+      margin: number,
+      satsAmount: number,
+      minFiatRequired: number,
+      fiatCode: string
+    }) => `⚠️ *Monto insuficiente tras aplicar margen*\n\n` +
+    `Al aplicar tu margen del ${margin}%, el total a recibir bajó a ${satsAmount.toLocaleString()} sats.\n\n` +
+    `Para cumplir con el mínimo de 60,000 sats, debes iniciar la orden con al menos *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
+    `🔄 Por favor, inicia la creación de la orden nuevamente.`,
   wizardPreview: (
     type: string,
     fiat: string,
@@ -113,7 +127,7 @@ export default {
     ratingCount: number;
   }) =>
     `**${action} Bitcoin**\n\n` +
-    `Por ${amountFiat} ${fiat} ${FiatCodes[fiat]?.emoji}\n ` +
+    `Por ${amountFiat} ${fiat} ${getFiatEmoji(fiat)}\n ` +
     `💳 ${payDirection} ${method}\n` +
     `🤝 Tiene ${tradesCount} operaciones exitosas\n` +
     `⏳ Usa el bot hace ${daysUsing} días\n\n` +
@@ -222,8 +236,10 @@ export default {
     `Esta orden permite un rango de **${range} ${fiat}**.\n\n` +
     `💬 *Por favor, escribe en el chat el monto exacto* por el que deseas hacer el intercambio (solo números):`,
   askBuyerAddress: (estimatedSats: number) =>
-    "📍 *Por favor, envía tu dirección de Bitcoin on-chain* donde recibirás los fondos.\n_(Asegúrate de que sea correcta, no nos hacemos responsables por errores)_\n\n" + 
-    "La cantidad estimada a recibir es de: `" + estimatedSats / 100_000_000 + "` BTC antes de comisiones de red.",
+    "📍 *Por favor, envía tu dirección de Bitcoin on-chain* donde recibirás los fondos.\n_(Asegúrate de que sea correcta, no nos hacemos responsables por errores)_\n\n" +
+    "La cantidad estimada a recibir es de: `" +
+    estimatedSats / 100_000_000 +
+    "` BTC antes de comisiones de red.",
   waitMaker:
     "⏳ Perfecto. Por favor, *espera a que la contraparte confirme* si desea continuar con la orden.",
   waitTaker:
@@ -241,7 +257,8 @@ export default {
   escrowUnconfirmed: (txid: string) =>
     `⏳ *Transacción detectada en la red.*\n\n` +
     `ID: \`${txid}\`\n` +
-    `_Esperando 1 confirmación para notificar a la contraparte y activar el contrato..._`,
+    `[Ver en el explorador](${mempoolBaseURL}/tx/${txid}) \n` +
+    `_Esperando 1 confirmación para poder proceder seguramente con la orden..._`,
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *¡Escrow Fondeado y Confirmado!*\n\n` +
     `Los fondos están asegurados en el contrato inteligente.\n\n` +
@@ -294,7 +311,8 @@ export default {
 
   // --------------------------- Rating -----------------------------------
   rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",
-  ratingDone: (stars: number) => `⭐ Has calificado a tu contraparte con ${stars} estrellas.`,
+  ratingDone: (stars: number) =>
+    `⭐ Has calificado a tu contraparte con ${stars} estrellas.`,
 
   // ─────────────────────────── Claim & Refund ───────────────────────────
   askClaimPassword: (
@@ -459,5 +477,7 @@ export default {
     "❌ Esa dirección de Bitcoin no es válida. Por favor, envía una dirección correcta:",
   maxOrdersReached: "❌ Haz alcanzado el límite de órdenes creadas por ti.",
   invalidFiatCode: "❌ El código fiat no fue reconocido, intenta de nuevo:",
-  orderAlreadyRated: "❌ La contraparte ya había sido calificada."
+  orderAlreadyRated: "❌ La contraparte ya había sido calificada.",
+  couldNotApplyMargin: "❌ Error desconocido al aplicar el margen, intenta de nuevo.",
+  couldNotFetchPrice: "❌ Error desconocido al buscar el código de la moneda, intenta de nuevo:"
 };

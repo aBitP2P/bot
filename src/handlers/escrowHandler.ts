@@ -6,7 +6,7 @@ import { getUser } from "../db/users.js";
 import { dictionaries, type Language } from "../locales/index.js";
 import type { BotContext } from "../types.js";
 import { generateEscrow } from "../core/bitcoin/index.js";
-import { getSatsAmount } from "../utils/price.js";
+import { getRateInfoFor } from "../utils/price.js";
 import QRCode from "qrcode";
 
 export async function initializeEscrow(ctx: BotContext, orderId: string) {
@@ -34,7 +34,7 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
   );
 
   const fiatAmount = order.fiatAmountLocked!;
-  const baseSats = await getSatsAmount(
+  const { satsAmount: baseSats } = await getRateInfoFor(
     fiatAmount,
     order.fiatCode,
     order.margin,

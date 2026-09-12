@@ -14,6 +14,7 @@ export interface SessionData {
   previewMessageId?: number | undefined; 
   awaitingAddressForOrder?: string | undefined;
   awaitingAmountForOrder?: string | undefined;
+  passwordToConfirm?: string | undefined;
   claimOrderId?: string | undefined;
 }
 

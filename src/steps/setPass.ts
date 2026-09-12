@@ -9,16 +9,35 @@ export async function setPassStep(ctx: CommandContext) {
   const password = ctx.message.text;
   const userId = ctx.from.id;
 
+  try {
+    await ctx.deleteMessage();
+  } catch (e) {
+    console.error("No se pudo borrar el msj de la contraseña");
+  }
+
+  if (!ctx.session.passwordToConfirm) {
+    ctx.session.passwordToConfirm = password;
+    await ctx.reply(ctx.dict.confirmPassword);
+    return;
+  }
+
+  if (password !== ctx.session.passwordToConfirm) {
+    await ctx.reply(ctx.dict.passwordsDoNotMatch);
+    ctx.session = { step: "IDLE", draft: {} };
+    return;
+  }
+
   const wif = generateWif();
   const pubkey = getPubkeyFromWif(wif);
   const encryptedWif = encryptData(wif, password);
 
-  await db.update(users).set({ encryptedWif, pubkey }).where(eq(users.telegramId, userId));
+  await db
+    .update(users)
+    .set({ encryptedWif, pubkey })
+    .where(eq(users.telegramId, userId));
 
-  ctx.session.step = 'IDLE';
+  ctx.session.step = "IDLE";
   ctx.dict;
 
-  try { await ctx.deleteMessage(); } catch (e) { console.error('No se pudo borrar el msj de la contraseña'); }
-
-  return ctx.reply(ctx.dict.passwordSetSuccess, { parse_mode: 'Markdown' });
+  return ctx.reply(ctx.dict.passwordSetSuccess, { parse_mode: "Markdown" });
 }

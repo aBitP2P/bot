@@ -49,11 +49,11 @@ export default {
   setYourPersonalPassword:
     "❌ You must first set your password with /setpass to take or create orders.",
   promptPassword:
-    `` +
     `*⚠️ A private key linked to your user will be generated, the password WILL BE REQUIRED to claim the orders.*\n` +
     `*IT CANNOT BE CHANGED, make sure to type it correctly and write it down somewhere.*\n\n` +
-    "👀 The aBit team is not responsible for the loss of it.\n\n" +
-    "🔑 Please, type your password to configure your user: ",
+    "🔑 **Please, type your password to configure your user: **",
+  confirmPassword: "👉 To confirm, type your password again: ",
+  passwordsDoNotMatch: "❌ Passwords don't match. Try again with /setpass",
   passwordAlreadySet: "❌ You already have a previously set password.",
   passwordSetSuccess:
     `✅ *Password configured successfully.* Profile encrypted and ready to use.\n\n` +

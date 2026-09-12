@@ -11,7 +11,8 @@ export default {
     Strings.GENERAL_CHAT_TAG +
     " y suscribirte al canal de órdenes: " +
     Strings.ORDER_CHANNEL_TAG +
-    " ✨",
+    " ✨" + "\n\n" + 
+    "👀 Actualmente el bot no tiene muchos usuarios, ¡pero siéntete libre de colocar tus órdenes de compra o venta! Apoyas a que el bot tenga más liquidez en general.",
   helpMessage: () =>
     `🤖 *aBitP2P — Centro de Ayuda*\n\n` +
     `🛒 *Mercado*\n` +
@@ -52,11 +53,11 @@ export default {
   setYourPersonalPassword:
     "❌ Primero debes de establecer tu contraseña con /setpass para poder tomar o crear órdenes.",
   promptPassword:
-    `` +
     `*⚠️ Se generará una llave privada ligada a tu usuario, la contraseña SERÁ NECESARIA para reclamar las órdenes.*\n` +
     `*NO SE PUEDE CAMBIAR, asegúrate de escribirla correctamente y anotarla en algún lugar.*\n\n` +
-    "👀 El equipo de aBit no se hace responsable de la pérdida de esta.\n\n" +
-    "🔑 Por favor, escribe tu contraseña para configurar tu usuario: ",
+    "🔑 *Por favor, escribe tu contraseña para configurar tu usuario:*",
+  confirmPassword: "👉 Para confirmar, vuelve a escribir la contraseña: ",
+  passwordsDoNotMatch: "❌ Las contraseñas no coinciden. Inténtalo de nuevo con /setpass",
   passwordAlreadySet: "❌ Ya tienes una contraseña establecida previamente.",
   passwordSetSuccess:
     `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.\n\n` +

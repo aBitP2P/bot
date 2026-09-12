@@ -127,7 +127,7 @@ export default {
     ratingCount: number;
   }) =>
     `**${action} Bitcoin**\n\n` +
-    `Por ${amountFiat} ${fiat} ${getFiatEmoji(fiat)}\n ` +
+    `Por ${amountFiat.split("-").join(" - ")} ${fiat} ${getFiatEmoji(fiat)}\n ` +
     `💳 ${payDirection} ${method}\n` +
     `🤝 Tiene ${tradesCount} operaciones exitosas\n` +
     `⏳ Usa el bot hace ${daysUsing} días\n\n` +

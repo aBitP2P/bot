@@ -61,7 +61,9 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
           PUBLIC_CHANNEL_ID,
           order.channelMessageId,
         );
-      } catch (e) {}
+      } catch (e) {
+        console.error(e);
+      }
     }
 
     return ctx.reply(dict.orderCancelled);

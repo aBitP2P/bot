@@ -123,7 +123,7 @@ export default {
     id: string;
   }) =>
     `**${action} Bitcoin**\n\n` +
-    `For ${amountFiat} ${fiat} ${getFiatEmoji(fiat)}\n` +
+    `For ${amountFiat.split("-").join(" - ")} ${fiat} ${getFiatEmoji(fiat)}\n` +
     `💳 ${payDirection} ${method}\n` +
     `🤝 Has ${tradesCount} successful trades\n` +
     `⏳ Using the bot for ${daysUsing} days\n\n` +

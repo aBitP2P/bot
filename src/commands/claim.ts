@@ -52,7 +52,7 @@ export async function startClaimPasswordFlow(
 ) {
   const dict = ctx.dict;
   const isRefund = order.status === 'REFUNDABLE';
-  const minerFeeSats = await getLiveMinerFee(order.escrowAddress!, isRefund ? 1 : 2);
+  const minerFeeSats = await getLiveMinerFee(order.escrowAddress!, isRefund ? 1 : (parseFloat(process.env.BOT_FEE!) === 0.0 ? 1 : 2));
 
   let finalAmount: number;
 

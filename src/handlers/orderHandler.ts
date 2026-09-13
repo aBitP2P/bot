@@ -287,9 +287,10 @@ export async function handleMakerConfirm(
     })
     await ctx.reply(dict.askBuyerAddress(estimatedSats), { parse_mode: "Markdown" });
   } else {
+    let taker = await getUser(order.takerId!);
     await ctx.telegram.sendMessage(
       order.takerId!,
-      dict.acceptedNowWaitingEscrow,
+      dictionaries[taker!.language as Language]!.acceptedNowWaitingEscrow,
       { parse_mode: "Markdown" },
     );
     await db

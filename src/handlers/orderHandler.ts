@@ -49,7 +49,7 @@ export async function handleOrderCancelledRepublish(
 
   const sentChannelMsg = await ctx.telegram.sendMessage(
     PUBLIC_CHANNEL_ID,
-    ctx.dict.channelOrder({
+    dict.channelOrder({
       action: order!.type === "SELL" ? dict.actionSell : dict.actionBuy,
       amountFiat: order!.amountFiat,
       fiat: order!.fiatCode,

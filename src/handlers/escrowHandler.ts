@@ -40,7 +40,7 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
     order.margin,
   );
 
-  const totalBotFee = parseFloat(process.env.BOT_FEE || "0.8");
+  const totalBotFee = parseFloat(process.env.BOT_FEE!);
   const sellerFeeSats = Math.floor(baseSats * (totalBotFee / 2 / 100));
 
   const satsToDeposit = baseSats + sellerFeeSats;

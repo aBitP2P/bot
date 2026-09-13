@@ -46,7 +46,7 @@ export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<
   const baseSats = order.amountSats;
   const botFeePercent = parseFloat(process.env.BOT_FEE!);
   const buyerFee = Math.floor(baseSats * (botFeePercent / 100) / 2);
-  const minerFee = await getLiveMinerFee(null, 2, utxos.length);
+  const minerFee = await getLiveMinerFee(null, botFeePercent === 0 ? 1 : 2, utxos.length);
 
   const buyerOutput = baseSats - buyerFee - minerFee;
   if (buyerOutput < DUST_LIMIT) throw new Error(`Fondos insuficientes tras comisiones (Neto: ${buyerOutput} sats). Por favor, espere a que baje la congestión de la red.`);

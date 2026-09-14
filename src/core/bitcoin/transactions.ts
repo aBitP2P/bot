@@ -5,15 +5,28 @@ import { getLiveMinerFee, getNextDerivationIndex, getBotFeeAddress } from "./fee
 
 const DUST_LIMIT = 546;
 
-export async function checkEscrowFunding(address: string) {
+export async function checkEscrowFunding(address: string, currentHeight?: number, requiredConf: number = 2) {
   try {
     const res = await fetch(getMempoolApiPath(`address/${address}/utxo`), { cache: "no-store" });
     if (!res.ok) return null;
     const utxos = await res.json();
     if (utxos.length === 0) return null;
 
+    let height = currentHeight;
+    if (height === undefined) {
+      const tipRes = await fetch(getMempoolApiPath("blocks/tip/height"), { cache: "no-store" });
+      if (!tipRes.ok) return null;
+      height = parseInt(await tipRes.text(), 10);
+    }
+
     const totalFundedSats = utxos.reduce((acc: number, utxo: any) => acc + utxo.value, 0);
-    const confirmed = utxos.some((utxo: any) => utxo.status.confirmed === true);
+
+    const confirmed = utxos.every((utxo: any) => {
+      if (!utxo.status || !utxo.status.confirmed) return false;
+      const confs = height - utxo.status.block_height + 1;
+      return confs >= requiredConf;
+    });
+
     return { totalFundedSats, confirmed, txid: utxos[0].txid };
   } catch (error) {
     return null;

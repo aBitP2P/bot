@@ -159,7 +159,6 @@ export default {
         `Type: \`${typeLabel}\``,
         `Fiat: \`${o.fiatCode}\``,
         `Amount: \`${o.fiatAmountLocked ?? o.amountFiat} ${o.fiatCode}\``,
-        `Method: \`${o.paymentMethod}\``,
         `Margin: \`${marginLabel}\``,
         `Status: \`${statusLabel}\``,
         `Created at: \`${createdDate}\``,
@@ -170,6 +169,8 @@ export default {
       "\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n",
     );
   },
+  orderExpiredCancelled: (orderId: string) =>
+  `⌛ *Order expired*\n\nYour order \`${orderId}\` has exceeded the 24-hour limit without being taken. It has been automatically cancelled and removed from the channel.`,
 
   // ─────────────────────────── Matchmaking & Confirmations ───────────────────────────
   orderTaken: "⚠️ This order has already been taken by someone else.",
@@ -245,12 +246,12 @@ export default {
     `⚡ *Escrow Funding Required*\n\n` +
     `Please, send \`${sats / 100_000_000}\` BTC to the following on-chain address:\n\n` +
     `\`${address}\`\n\n` +
-    `_Once the transaction is confirmed (1 conf), we will put you in contact. Please make sure to send the EXACT amount, otherwise, it might require manual attention._`,
+    `_Once the transaction is confirmed (2 confirmations), we will put you in contact. Please make sure to send the EXACT amount, otherwise, it might require manual attention._`,
   escrowUnconfirmed: (txid: string) =>
     `⏳ *Transaction detected on the network.*\n\n` +
     `ID: \`${txid}\`\n` +
     `[View in explorer](${mempoolBaseURL}/tx/${txid})\n` + 
-    `_Waiting for 1 confirmation to proceed safely..._`,
+    `_Waiting for 2 confirmations to proceed safely..._`,
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *Escrow Funded and Confirmed!*\n\n` +
     `The funds are secured in the smart contract.\n\n` +
@@ -328,7 +329,7 @@ export default {
   // ─────────────────────────── Cancellations ───────────────────────────
   selectOrderToCancel: "👉 Select the order you want to cancel, you can check details by using /listorders",
   cancelNotAllowed: `❌ You cannot cancel the order in this state. If the payment was already sent, you must open a dispute.`,
-  cancelUnconfirmed: `⏳ The order has an unconfirmed transaction on the network. You must wait for 1 confirmation before initiating a cancellation.`,
+  cancelUnconfirmed: `⏳ The order has an unconfirmed transaction on the network. You must wait for 2 confirmation before initiating a cancellation.`,
   cancelAlreadyRequested: `⏳ You have already requested the cancellation. Waiting for your counterparty to accept and sign.`,
   cancelOnlySeller: `❌ Only the seller can cancel the order in this state.`,
   counterpartyCanceledDeleted: (orderId: string) =>
@@ -467,5 +468,10 @@ export default {
   invalidFiatCode: "❌ Entered fiat code is invalid, please try again:",
   orderAlreadyRated: "❌ The counterparty had already been rated.",
   couldNotApplyMargin: "❌ Unknown error applying margin, please try again.",
-  couldNotFetchPrice: "❌ Unknown error fetching currency code, please try again:"
+  couldNotFetchPrice: "❌ Unknown error fetching currency code, please try again:",
+  priceApiErrorRepublish: "❌ *Connection error calculating the price.*\n\nThe agreement was cancelled and the order has been automatically republished in the channel. Please try again later.",
+  makerTimeoutNotifyMaker: (orderId: string) => `❌ *Order cancelled due to inactivity*\n\nYour order \`${orderId}\` was cancelled because you didn't confirm the request in time.`,
+  makerTimeoutNotifyTaker: (orderId: string) => `❌ *Order cancelled*\n\nThe creator of order \`${orderId}\` did not respond in time. The order has been cancelled.`,
+  takerTimeoutNotifyTaker: (orderId: string) => `⏳ *Time out*\n\nYour time to complete the details for order \`${orderId}\` has expired. The order has been republished in the channel; if you still want to proceed, you must take it again.`,
+  alreadyHaveActiveOrder: "❌ You already have an order in progress. You must finish or cancel it before taking another one.",
 };

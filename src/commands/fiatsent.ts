@@ -2,6 +2,7 @@ import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
 import { getUser } from "../db/users.js";
 import { dictionaries, type Language } from "../locales/index.js";
 import type { CommandContext } from "../types.js";
+import { escapeMarkdown } from "../utils/format.js";
 
 
 export async function fiatsentCommand(ctx: CommandContext) {
@@ -29,7 +30,7 @@ export async function fiatsentCommand(ctx: CommandContext) {
 
   const seller = await getUser(sellerId!);
   const dictSeller = dictionaries[(seller?.language as Language) || 'es'];
-  const buyerName = ctx.from.username || "El comprador";
+  const buyerName = ctx.from.username ? escapeMarkdown(ctx.from.username) : "El comprador";
 
   await ctx.reply(dict.fiatSentToBuyer(order.id), { parse_mode: 'Markdown' });
   await ctx.telegram.sendMessage(sellerId!, dictSeller.fiatSentToSeller(order.id, buyerName), { parse_mode: 'Markdown' });

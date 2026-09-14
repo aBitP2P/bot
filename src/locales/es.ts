@@ -165,7 +165,6 @@ export default {
         `Tipo: \`${typeLabel}\``,
         `Fiat: \`${o.fiatCode}\``,
         `Monto: \`${o.fiatAmountLocked ?? o.amountFiat} ${o.fiatCode}\``,
-        `Método: \`${o.paymentMethod}\``,
         `Margen: \`${marginLabel}\``,
         `Estado: \`${statusLabel}\``,
         `Creada: \`${createdDate}\``,
@@ -176,6 +175,8 @@ export default {
       "\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n",
     );
   },
+  orderExpiredCancelled: (orderId: string) =>
+  `⌛ *Orden expirada*\n\nTu orden \`${orderId}\` ha superado las 24 horas publicada sin ser tomada. Ha sido cancelada automáticamente y retirada del canal.`,
 
   // ─────────────────────────── Matchmaking & Confirmations ───────────────────────────
   orderTaken: "⚠️ Esta orden ya fue tomada por otra persona.",
@@ -253,12 +254,12 @@ export default {
     `⚡ *Fondeo de escrow Requerido*\n\n` +
     `Por favor, envía \`${sats / 100_000_000}\` BTC a la siguiente dirección on-chain:\n\n` +
     `\`${address}\`\n\n` +
-    `_Una vez se confirme la transacción (1 conf), los pondremos en contacto. Por favor, asegurate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
+    `_Una vez se confirme la transacción (2 confirmaciones), los pondremos en contacto. Por favor, asegurate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
   escrowUnconfirmed: (txid: string) =>
     `⏳ *Transacción detectada en la red.*\n\n` +
     `ID: \`${txid}\`\n` +
     `[Ver en el explorador](${mempoolBaseURL}/tx/${txid}) \n` +
-    `_Esperando 1 confirmación para poder proceder seguramente con la orden..._`,
+    `_Esperando 2 confirmaciones para poder proceder seguramente con la orden..._`,
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *¡Escrow Fondeado y Confirmado!*\n\n` +
     `Los fondos están asegurados en el contrato inteligente.\n\n` +
@@ -339,7 +340,7 @@ export default {
   selectOrderToCancel:
     "👉 Selecciona la orden que quieres cancelar, puedes ver los detalles con /listorders",
   cancelNotAllowed: `❌ No puedes cancelar la orden en este estado. Si el pago ya fue enviado, deberás abrir una disputa.`,
-  cancelUnconfirmed: `⏳ La orden tiene una transacción sin confirmar en la red. Debes esperar 1 confirmación antes de iniciar una cancelación.`,
+  cancelUnconfirmed: `⏳ La orden tiene una transacción sin confirmar en la red. Debes esperar 2 confirmaciones antes de iniciar una cancelación.`,
   cancelAlreadyRequested: `⏳ Ya solicitaste la cancelación. Esperando a que tu contraparte acepte y firme.`,
   cancelOnlySeller: `❌ Solo el vendedor puede cancelar la orden en este estado.`,
   counterpartyCanceledDeleted: (orderId: string) =>
@@ -479,5 +480,10 @@ export default {
   invalidFiatCode: "❌ El código fiat no fue reconocido, intenta de nuevo:",
   orderAlreadyRated: "❌ La contraparte ya había sido calificada.",
   couldNotApplyMargin: "❌ Error desconocido al aplicar el margen, intenta de nuevo.",
-  couldNotFetchPrice: "❌ Error desconocido al buscar el código de la moneda, intenta de nuevo:"
+  couldNotFetchPrice: "❌ Error desconocido al buscar el código de la moneda, intenta de nuevo:",
+  priceApiErrorRepublish: "❌ *Error de conexión al calcular el precio.*\n\nEl acuerdo fue cancelado y la orden se ha vuelto a publicar automáticamente en el canal. Por favor, inténtalo de nuevo más tarde.",
+  makerTimeoutNotifyMaker: (orderId: string) => `❌ *Orden cancelada por inactividad*\n\nTu orden \`${orderId}\` ha sido cancelada porque no confirmaste la solicitud a tiempo.`,
+  makerTimeoutNotifyTaker: (orderId: string) => `❌ *Orden cancelada*\n\nEl creador de la orden \`${orderId}\` no respondió a tiempo. La orden ha sido cancelada.`,
+  takerTimeoutNotifyTaker: (orderId: string) => `⏳ *Tiempo agotado*\n\nTu tiempo para completar los detalles de la orden \`${orderId}\` ha expirado. La orden fue republicada en el canal; si aún deseas proceder, deberás tomarla nuevamente.`,
+  alreadyHaveActiveOrder: "❌ Ya tienes una orden en proceso. Debes terminarla o cancelarla antes de tomar otra.",
 };

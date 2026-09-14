@@ -60,7 +60,7 @@ export async function tryTransitionOrderStatus(
 ): Promise<boolean> {
   const [result] = (await db
     .update(orders)
-    .set({ status: toStatus, ...extraFields })
+    .set({ status: toStatus, updatedAt: Date.now(), ...extraFields })
     .where(
       and(eq(orders.id, orderId), inArray(orders.status, fromStatuses)),
     )) as unknown as [ResultSetHeader];
@@ -79,7 +79,7 @@ export async function tryConditionalUpdate(
 ): Promise<boolean> {
   const [result] = (await db
     .update(orders)
-    .set(fields)
+    .set({ updatedAt: Date.now(), ...fields })
     .where(and(eq(orders.id, orderId), condition))) as unknown as [
     ResultSetHeader,
   ];

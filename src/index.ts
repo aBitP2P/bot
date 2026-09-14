@@ -24,7 +24,7 @@ import { db } from "./db/index.js";
 import { eq } from "drizzle-orm";
 import { isValidAddress } from "./core/bitcoin/index.js";
 import { initializeEscrow } from "./handlers/escrowHandler.js";
-import { startEscrowMonitor } from "./services/monitor.js";
+import { startEscrowMonitor, startOrderTimeoutsMonitor } from "./services/monitor.js";
 import { userMiddleware } from "./middlewares/auth.js";
 import {
   claimCommand,
@@ -226,12 +226,15 @@ bot.on(message("text"), async (ctx, next) => {
   const orderToSetAmount = ctx.session.awaitingAmountForOrder;
   if (orderToSetAmount) {
     const order = await getOrder(orderToSetAmount);
-    if (!order) return next();
+    if (!order || order.status !== "WAITING_TAKER_CONFIRMATION" || order.takerId !== ctx.from.id) {
+      ctx.session.awaitingAmountForOrder = undefined;
+      return next();
+    }
 
     const [minStr, maxStr] = order.amountFiat.split("-");
     const min = parseFloat(minStr!);
     const max = parseFloat(maxStr!);
-    const inputAmount = parseFloat(text.replace(",", "."));
+    const inputAmount = parseFloat(text.replaceAll(",", "."));
 
     const dict = ctx.dict;
 
@@ -259,7 +262,10 @@ bot.on(message("text"), async (ctx, next) => {
     const address = ctx.message.text.trim();
     const order = await getOrder(orderId);
 
-    if (!order) return next();
+    if (!order || (order.status !== "WAITING_TAKER_CONFIRMATION" && order.status !== "WAITING_MAKER_CONFIRMATION")) {
+      ctx.session.awaitingAddressForOrder = undefined;
+      return next();
+    }
 
     if (!isValidAddress(address)) {
       return ctx.reply(ctx.dict.invalidBuyerAddress, {
@@ -298,6 +304,7 @@ bot.catch((err, ctx) => {
 });
 
 startEscrowMonitor(bot);
+startOrderTimeoutsMonitor(bot);
 bot.launch();
 
 process.once("SIGINT", () => bot.stop("SIGINT"));

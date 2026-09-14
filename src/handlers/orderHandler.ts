@@ -8,18 +8,82 @@ import {
 } from "../types.js";
 import { getUser } from "../db/users.js";
 import { type Language, dictionaries, t } from "../locales/index.js";
-import { Markup } from "telegraf";
+import { Markup, Telegraf } from "telegraf";
 import { initializeEscrow } from "./escrowHandler.js";
-import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
+import { getOrder, getUserOrders, tryTransitionOrderStatus } from "../db/orders.js";
 import {
   buildMakerConfirmKeyboard,
   buildTakerConfirmKeyboard,
 } from "../shared/keyboards.js";
 import { getRateInfoFor } from "../utils/price.js";
+import { escapeMarkdown } from "../utils/format.js";
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
+
+export async function republishOrderSilently(bot: Telegraf<BotContext>, orderId: string) {
+  const didReset = await tryTransitionOrderStatus(
+    orderId,
+    ["WAITING_TAKER_CONFIRMATION"],
+    "PENDING",
+    {
+      takerId: null,
+      buyerAddress: null,
+      fiatAmountLocked: null,
+      cancelRequestedBy: null,
+      createdAt: Date.now() // Reinicia las 24h
+    },
+  );
+
+  if (!didReset) return false;
+
+  const order = await getOrder(orderId);
+  if (!order) return false;
+  
+  const orderCreator = await getUser(order.creatorId);
+  if (!orderCreator) return false;
+  
+  const dict = dictionaries[(orderCreator.language as Language) || "es"];
+
+  const sentChannelMsg = await bot.telegram.sendMessage(
+    PUBLIC_CHANNEL_ID,
+    dict.channelOrder({
+      action: order.type === "SELL" ? dict.actionSell : dict.actionBuy,
+      amountFiat: order.amountFiat,
+      fiat: order.fiatCode,
+      payDirection: order.type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy,
+      method: escapeMarkdown(order.paymentMethod),
+      daysUsing: Math.floor((Date.now() - orderCreator.createdAt) / 86400000),
+      hashtag: `#${order.type}${order.fiatCode}`,
+      margin: order.margin,
+      rating: orderCreator.rating || 0,
+      ratingCount: orderCreator.ratingCount,
+      tradesCount: orderCreator.tradesCount || 0,
+      id: order.id,
+    }),
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            order.type === "SELL" ? dict.btnBuyBitcoin : dict.btnSellBitcoin,
+            `take_order_${orderId}`,
+          ),
+        ],
+      ]),
+    },
+  );
+
+  await db
+    .update(orders)
+    .set({ channelMessageId: sentChannelMsg.message_id })
+    .where(eq(orders.id, orderId));
+    
+  return true;
+}
+
 export async function handleOrderCancelledRepublish(
-  ctx: CallbackContext | CommandContext,
+  ctx: CallbackContext | CommandContext | BotContext,
   orderId: string,
+  customMessage?: string
 ) {
   const didReset = await tryTransitionOrderStatus(
     orderId,
@@ -30,6 +94,7 @@ export async function handleOrderCancelledRepublish(
       buyerAddress: null,
       fiatAmountLocked: null,
       cancelRequestedBy: null,
+      createdAt: Date.now(),
     },
   );
 
@@ -39,9 +104,11 @@ export async function handleOrderCancelledRepublish(
       : ctx.reply(ctx.dict.cancelNotAllowed);
   }
 
+  const msg = customMessage || ctx.dict.orderCancelled;
+
   ctx.callbackQuery
-    ? await ctx.editMessageText(ctx.dict.orderCancelled)
-    : await ctx.reply(ctx.dict.orderCancelled, { parse_mode: "Markdown" });
+    ? await ctx.editMessageText(msg)
+    : await ctx.reply(msg, { parse_mode: "Markdown" });
 
   const order = await getOrder(orderId);
   const orderCreator = (await getUser(order!.creatorId))!;
@@ -55,7 +122,7 @@ export async function handleOrderCancelledRepublish(
       fiat: order!.fiatCode,
       payDirection:
         order!.type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy,
-      method: order!.paymentMethod,
+      method: escapeMarkdown(order!.paymentMethod),
       daysUsing: Math.floor((Date.now() - orderCreator.createdAt) / 86400000),
       hashtag: `#${order!.type}${order!.fiatCode}`,
       margin: order!.margin,
@@ -102,6 +169,11 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
   if (order.creatorId === takerId)
     return ctx.answerCbQuery(dict.cantTakeOwnOrder, { show_alert: true });
 
+  const activeOrders = await getUserOrders(takerId);
+  const isBusy = activeOrders.some(o => o.takerId === takerId);
+  if (isBusy) return ctx.answerCbQuery(dict.alreadyHaveActiveOrder, { show_alert: true });
+  
+
   // CAS: si dos usuarios tocan "Tomar Orden" casi simultáneamente sobre la
   // misma orden PENDING, solo uno de los dos UPDATE afecta realmente la fila;
   // el otro ve 0 cambios y se le informa que ya fue tomada, en vez de que su
@@ -130,7 +202,7 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
       fiat: order.fiatCode,
       amount: order.amountFiat,
       margin: order.margin,
-      method: order.paymentMethod,
+      method: escapeMarkdown(order.paymentMethod),
       id: order.id,
     }),
     {
@@ -166,8 +238,8 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
     .where(eq(orders.id, orderId));
 
   await proceedAfterTakerAmount(ctx, {
-    ...order, 
-    fiatAmountLocked: exactAmount
+    ...order,
+    fiatAmountLocked: exactAmount,
   });
 }
 
@@ -182,6 +254,10 @@ export async function proceedAfterTakerAmount(ctx: BotContext, order: any) {
       fiatCode: order.fiatCode,
       margin: order.margin,
     });
+    if (estimatedSats === 0) {
+      ctx.session.awaitingAddressForOrder = undefined;
+      return handleOrderCancelledRepublish(ctx, order.id, dict.priceApiErrorRepublish);
+    } 
     await ctx.reply(dict.askBuyerAddress(estimatedSats), {
       parse_mode: "Markdown",
     });
@@ -204,17 +280,21 @@ async function calculateSatsBeforeFees({
   fiatCode: string;
   margin: number;
 }): Promise<number> {
-  const { satsAmount: estimatedSatsBeforeFee } = await getRateInfoFor(
-    fiatAmountLocked,
-    fiatCode,
-    margin,
-  );
-  const botFeePercent = parseFloat(process.env.BOT_FEE!);
-  const totalBotFeeSats = Math.floor(
-    estimatedSatsBeforeFee * (botFeePercent / 100),
-  );
-  const partyFeeSats = Math.floor(totalBotFeeSats / 2);
-  return estimatedSatsBeforeFee - partyFeeSats;
+  try {
+    const { satsAmount: estimatedSatsBeforeFee } = await getRateInfoFor(
+      fiatAmountLocked,
+      fiatCode,
+      margin,
+    );
+    const botFeePercent = parseFloat(process.env.BOT_FEE!);
+    const totalBotFeeSats = Math.floor(
+      estimatedSatsBeforeFee * (botFeePercent / 100),
+    );
+    const partyFeeSats = Math.floor(totalBotFeeSats / 2);
+    return estimatedSatsBeforeFee - partyFeeSats;
+  } catch (error) {
+    return 0;
+  }
 }
 
 export async function notifyMakerForConfirmation(
@@ -248,7 +328,7 @@ export async function notifyMakerForConfirmation(
       fiat: order.fiatCode,
       amount: displayAmount,
       margin: order.margin,
-      method: order.paymentMethod,
+      method: escapeMarkdown(order.paymentMethod),
       trades: taker?.tradesCount || 0,
       days: daysUsing,
       rating: taker?.rating || 0,
@@ -280,12 +360,24 @@ export async function handleMakerConfirm(
 
   if (isMakerBuyer) {
     ctx.session.awaitingAddressForOrder = orderId;
-    const estimatedSats = await calculateSatsBeforeFees({ 
+    const estimatedSats = await calculateSatsBeforeFees({
       fiatAmountLocked: order.fiatAmountLocked!,
       fiatCode: order.fiatCode,
-      margin: order.margin
-    })
-    await ctx.reply(dict.askBuyerAddress(estimatedSats), { parse_mode: "Markdown" });
+      margin: order.margin,
+    });
+
+    if (estimatedSats === 0) {
+      ctx.session.awaitingAddressForOrder = undefined;
+      
+      const takerDict = dictionaries[((await getUser(order.takerId!))?.language as Language) || "es"];
+      await ctx.telegram.sendMessage(order.takerId!, takerDict.priceApiErrorRepublish, { parse_mode: "Markdown" });
+
+      return handleOrderCancelledRepublish(ctx, orderId, dict.priceApiErrorRepublish);
+    }
+
+    await ctx.reply(dict.askBuyerAddress(estimatedSats), {
+      parse_mode: "Markdown",
+    });
   } else {
     let taker = await getUser(order.takerId!);
     await ctx.telegram.sendMessage(

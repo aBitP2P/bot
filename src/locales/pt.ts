@@ -165,7 +165,6 @@ export default {
         `Tipo: \`${typeLabel}\``,
         `Fiat: \`${o.fiatCode}\``,
         `Valor: \`${o.fiatAmountLocked ?? o.amountFiat} ${o.fiatCode}\``,
-        `Método: \`${o.paymentMethod}\``,
         `Margem: \`${marginLabel}\``,
         `Status: \`${statusLabel}\``,
         `Criada em: \`${createdDate}\``,
@@ -176,6 +175,8 @@ export default {
       "\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n",
     );
   },
+  orderExpiredCancelled: (orderId: string) =>
+  `⌛ *Ordem expirada*\n\nSua ordem \`${orderId}\` excedeu o limite de 24 horas sem ser aceita. Ela foi cancelada automaticamente e removida do canal.`,
 
   // ─────────────────────────── Matching e Confirmações ───────────────────────────
   orderTaken: "⚠️ Esta ordem já foi aceita por outra pessoa.",
@@ -253,12 +254,12 @@ export default {
     `⚡ *Financiamento do escrow necessário*\n\n` +
     `Envie \`${sats / 100_000_000}\` BTC para o seguinte endereço on-chain:\n\n` +
     `\`${address}\`\n\n` +
-    `_Assim que a transação for confirmada (1 confirmação), colocaremos vocês em contato. Envie o valor EXATO; caso contrário, poderá ser necessária uma intervenção manual._`,
+    `_Assim que a transação for confirmada (2 confirmações), colocaremos vocês em contato. Envie o valor EXATO; caso contrário, poderá ser necessária uma intervenção manual._`,
   escrowUnconfirmed: (txid: string) =>
     `⏳ *Transação detectada na rede.*\n\n` +
     `ID: \`${txid}\`\n` +
     `[Ver no explorador](${mempoolBaseURL}/tx/${txid}) \n` +
-    `_Aguardando 1 confirmação para prosseguir com segurança com a ordem..._`,
+    `_Aguardando 2 confirmações para prosseguir com segurança com a ordem..._`,
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *Escrow financiado e confirmado!*\n\n` +
     `Os fundos estão protegidos no contrato inteligente.\n\n` +
@@ -339,7 +340,7 @@ export default {
   selectOrderToCancel:
     "👉 Selecione a ordem que deseja cancelar. Você pode ver os detalhes usando /listorders",
   cancelNotAllowed: `❌ Você não pode cancelar a ordem neste status. Se o pagamento já foi enviado, deverá abrir uma disputa.`,
-  cancelUnconfirmed: `⏳ A ordem possui uma transação não confirmada na rede. Você precisa aguardar 1 confirmação antes de iniciar um cancelamento.`,
+  cancelUnconfirmed: `⏳ A ordem possui uma transação não confirmada na rede. Você precisa aguardar 2 confirmações antes de iniciar um cancelamento.`,
   cancelAlreadyRequested: `⏳ Você já solicitou o cancelamento. Aguardando que sua contraparte aceite e assine.`,
   cancelOnlySeller: `❌ Somente o vendedor pode cancelar a ordem neste status.`,
   counterpartyCanceledDeleted: (orderId: string) =>
@@ -479,5 +480,10 @@ export default {
   invalidFiatCode: "❌ O código FIAT não foi reconhecido. Tente novamente:",
   orderAlreadyRated: "❌ A contraparte já foi avaliada.",
   couldNotApplyMargin: "❌ Ocorreu um erro desconhecido ao aplicar a margem. Tente novamente.",
-  couldNotFetchPrice: "❌ Ocorreu um erro desconhecido ao buscar o preço da moeda. Tente novamente:"
+  couldNotFetchPrice: "❌ Ocorreu um erro desconhecido ao buscar o preço da moeda. Tente novamente:",
+  priceApiErrorRepublish: "❌ *Erro de conexão ao calcular o preço.*\n\nO acordo foi cancelado e a ordem foi republicada automaticamente no canal. Por favor, tente novamente mais tarde.",
+  makerTimeoutNotifyMaker: (orderId: string) => `❌ *Ordem cancelada por inatividade*\n\nSua ordem \`${orderId}\` foi cancelada porque você não confirmou a solicitação a tempo.`,
+  makerTimeoutNotifyTaker: (orderId: string) => `❌ *Ordem cancelada*\n\nO criador da ordem \`${orderId}\` não respondeu a tempo. A ordem foi cancelada.`,
+  takerTimeoutNotifyTaker: (orderId: string) => `⏳ *Tempo esgotado*\n\nSeu tempo para concluir os detalhes da ordem \`${orderId}\` expirou. A ordem foi republicada no canal; se você ainda quiser continuar, precisará pegá-la novamente.`,
+  alreadyHaveActiveOrder: "❌ Você já tem uma ordem em andamento. Você deve finalizá-la ou cancelá-la antes de aceitar outra.",
 };

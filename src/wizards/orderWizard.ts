@@ -12,6 +12,7 @@ import {
   buildTakeOrderKeyboard,
 } from "../shared/keyboards.js";
 import { getMinFiatAmount, getRateInfoFor, ratesCache } from "../utils/price.js";
+import { escapeMarkdown } from "../utils/format.js";
 
 const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -178,14 +179,17 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
         return true;
       }
 
-      const [min, max] = text.split("-").map(Number) as [number, number];
+      const [min, max] = amounts as [number, number?];
       if (max !== undefined && min >= max) return true;
 
-      const { appliedRate } = await getRateInfoFor(
-        min,
-        ctx.session.draft.fiat!,
-        0,
-      );
+      let appliedRate: number;
+      try {
+        const rateInfo = await getRateInfoFor(min, ctx.session.draft.fiat!, 0);
+        appliedRate = rateInfo.appliedRate;
+      } catch (e) {
+        await updatePreview("WAITING_AMOUNT", undefined, ctx.dict.couldNotFetchPrice);
+        return true;
+      }
 
       const minFiatValue = getMinFiatAmount(appliedRate);
       if (min < minFiatValue) {
@@ -197,7 +201,7 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
         return true;
       }
 
-      ctx.session.draft.amount = text.replace(",", ".");
+      ctx.session.draft.amount = text.replaceAll(",", ".");
       ctx.session.step = "WAITING_MARGIN";
 
       await updatePreview(
@@ -208,11 +212,8 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
     case "WAITING_PAYMENT_METHOD":
       if (!text || text.trim().length === 0) return true;
-      const sanitized = text.replace(/[&/\\#,+~%.'":*?<>{}_`\[\]()]/g, "");
-      if (sanitized.trim().length === 0) return true;
 
-      ctx.session.draft.paymentMethod = sanitized;
-
+      ctx.session.draft.paymentMethod = text.trim();
       await publishOrderToChannel(ctx, lang);
       ctx.session = { step: "IDLE", draft: {} };
       return true;
@@ -337,7 +338,7 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
     amountFiat: amount!,
     fiat: fiat!,
     payDirection,
-    method: paymentMethod!,
+    method: escapeMarkdown(paymentMethod!),
     daysUsing,
     hashtag,
     margin: margin!,

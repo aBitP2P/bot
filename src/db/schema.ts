@@ -46,6 +46,7 @@ export const orders = mysqlTable("orders", {
   payoutTxid: varchar("payout_txid", { length: 128 }),
 
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull().$defaultFn(() => Date.now())
 }, (table) => [
   index("status_idx").on(table.status),
   index("creator_idx").on(table.creatorId),

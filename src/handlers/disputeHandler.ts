@@ -12,6 +12,7 @@ import { generateVerificationCode } from "../utils/crypto.js";
 import { isAdmin } from "../utils/admin.js";
 import { Markup } from "telegraf";
 import { buildSettleDisputeKeyboard } from "../shared/keyboards.js";
+import { escapeMarkdown } from "../utils/format.js";
 
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
 
@@ -40,13 +41,10 @@ function getPartyIds(order: typeof orders.$inferSelect): {
 }
 
 async function getDisplayHandle(
-  ctx: BotContext,
   telegramId: number,
 ): Promise<string> {
-  const chat = (await ctx.telegram.getChat(telegramId).catch(() => null)) as {
-    username?: string;
-  } | null;
-  if (chat?.username) return `@${chat.username}`;
+  const user = await getUser(telegramId);
+  if (user) return `@${escapeMarkdown(user.username)}`;
   return `ID: ${telegramId}`;
 }
 
@@ -113,8 +111,8 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
       amountFiat: `${order.fiatAmountLocked}`,
       status: previousStatus,
       escrowAddress: order.escrowAddress || "N/A",
-      buyerUsername: buyer!.username,
-      sellerUsername: seller!.username,
+      buyerUsername: escapeMarkdown(buyer!.username),
+      sellerUsername: escapeMarkdown(seller!.username),
       buyerCode,
       sellerCode,
     }),
@@ -147,7 +145,7 @@ export async function takeDispute(ctx: CommandContext, orderId: string) {
   });
 
   const adminUsername = ctx.from.username
-    ? `@${ctx.from.username}`
+    ? `@${escapeMarkdown(ctx.from.username)}`
     : `Admin (ID: ${adminId})`;
   const { sellerId, buyerId } = getPartyIds(order);
   if (!sellerId || !buyerId) return;
@@ -212,8 +210,8 @@ export async function settleCommand(ctx: CommandContext, orderId: string) {
   if (!sellerId || !buyerId)
     return ctx.reply(dict.settleNotFoundOrNotInDispute);
 
-  const buyerHandle = await getDisplayHandle(ctx, buyerId);
-  const sellerHandle = await getDisplayHandle(ctx, sellerId);
+  const buyerHandle = await getDisplayHandle(buyerId);
+  const sellerHandle = await getDisplayHandle(sellerId);
 
   await ctx.reply(dict.settlePrompt(orderId, buyerHandle, sellerHandle), {
     parse_mode: "Markdown",

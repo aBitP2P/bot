@@ -9,6 +9,7 @@ import type { CallbackContext, CommandContext } from "../types.js";
 import { handleOrderCancelledRepublish } from "../handlers/orderHandler.js";
 import { TERMINAL_STATUSES } from "../shared/constants.js";
 import { buildCancelOrderKeyboard } from "../shared/keyboards.js";
+import { checkEscrowFunding } from "../core/bitcoin/transactions.js";
 
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -78,6 +79,13 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
   switch (order.status) {
     case "WAITING_ESCROW": {
       if (userId !== sellerId) return ctx.reply(dict.cancelOnlySeller);
+
+      if (order.escrowAddress) {
+        const funding = await checkEscrowFunding(order.escrowAddress);
+        if (funding && funding.totalFundedSats > 0) {
+          return ctx.reply(dict.cancelUnconfirmed);
+        }
+      }
 
       const didCancel = await tryTransitionOrderStatus(
         orderId,

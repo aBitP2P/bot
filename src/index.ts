@@ -19,7 +19,7 @@ import {
 } from "./handlers/orderHandler.js";
 import { getOrder, tryTransitionOrderStatus } from "./db/orders.js";
 import { message } from "telegraf/filters";
-import { orders } from "./db/schema.js";
+import { orders, users } from "./db/schema.js";
 import { db } from "./db/index.js";
 import { eq } from "drizzle-orm";
 import { isValidAddress } from "./core/bitcoin/index.js";
@@ -38,6 +38,7 @@ import {
   helpCommand,
   setlangCommand,
   feesCommand,
+  setFeeCommand,
 } from "./commands/index.js";
 import {
   claimPasswordStep,
@@ -82,6 +83,7 @@ bot.command("settle", settleCommand);
 bot.command("help", helpCommand);
 bot.command("setlang", setlangCommand);
 bot.command("fees", feesCommand);
+bot.command("setfee", setFeeCommand);
 
 bot.on("callback_query", async (ctx, next) => {
   const query = ctx.callbackQuery as { data?: string };
@@ -121,6 +123,12 @@ bot.on("callback_query", async (ctx, next) => {
       await ctx.editMessageReplyMarkup(undefined);
     } catch (e) {}
     return handleOrderCancelFromCommand(ctx, orderId);
+  }
+
+  if (data.startsWith("setfee_default")) {
+    await db.update(users).set({ customFee: null }).where(eq(users.telegramId, ctx.from.id));
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(ctx.dict.feeResetSuccess, { parse_mode: "Markdown" })
   }
 
   if (data.startsWith("maker_deny_")) {

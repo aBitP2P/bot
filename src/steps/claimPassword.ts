@@ -1,9 +1,5 @@
 // ctx.session.step === "CLAIM_PASSWORD"
-
-import { eq, sql } from "drizzle-orm";
-import { db } from "../db/index.js";
 import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
-import { orders, users } from "../db/schema.js";
 import type { CommandContext } from "../types.js";
 import {
   broadcastReleaseTx,
@@ -59,10 +55,14 @@ export async function claimPasswordStep(ctx: CommandContext) {
   try {
     const targetStatus = isRefund ? "REFUNDED" : "COMPLETED";
     const currentValidStatus = isRefund ? "REFUNDABLE" : "RELEASABLE";
-
-    const txid = isRefund
-      ? await broadcastRefundTx(order, signerWif)
-      : await broadcastReleaseTx(order, signerWif);
+    let txid = "";
+    try {
+      txid = isRefund
+      ? await broadcastRefundTx(order, signerWif, ctx.user.customFee)
+      : await broadcastReleaseTx(order, signerWif, ctx.user.customFee);
+    } catch (error: any) {
+      throw error;
+    }
 
     // si por alguna razón el status ya no fuera RELEASABLE/REFUNDABLE
     // (p. ej. dos invocaciones casi simultáneas de /claim), al menos no se

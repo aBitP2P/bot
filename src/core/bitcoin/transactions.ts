@@ -33,7 +33,7 @@ export async function checkEscrowFunding(address: string, currentHeight?: number
   }
 }
 
-export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<string> {
+export async function broadcastReleaseTx(order: any, buyerWif: string, feeRate?: number | null): Promise<string> {
   const buyerKeypair = ECPair.fromWIF(buyerWif, network);
   const escrowBotKeypair = deriveOrderBotKeypair(order.id);
 
@@ -59,7 +59,12 @@ export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<
   const baseSats = order.amountSats;
   const botFeePercent = parseFloat(process.env.BOT_FEE!);
   const buyerFee = Math.floor(baseSats * (botFeePercent / 100) / 2);
-  const minerFee = await getLiveMinerFee(null, botFeePercent === 0 ? 1 : 2, utxos.length);
+  const { satsAmount: minerFee } = await getLiveMinerFee({
+    escrowAddress: null, 
+    outputCount: botFeePercent === 0 ? 1 : 2, 
+    customUtxosCount: utxos.length,
+    customFeeRate: feeRate ?? null
+  });
 
   const buyerOutput = baseSats - buyerFee - minerFee;
   if (buyerOutput < DUST_LIMIT) throw new Error(`Fondos insuficientes tras comisiones (Neto: ${buyerOutput} sats). Por favor, espere a que baje la congestión de la red.`);
@@ -78,7 +83,7 @@ export async function broadcastReleaseTx(order: any, buyerWif: string): Promise<
   return executeBroadcast(psbt.extractTransaction().toHex());
 }
 
-export async function broadcastRefundTx(order: any, sellerWif: string): Promise<string> {
+export async function broadcastRefundTx(order: any, sellerWif: string, feeRate?: number | null): Promise<string> {
   const sellerKeypair = ECPair.fromWIF(sellerWif, network);
   const escrowBotKeypair = deriveOrderBotKeypair(order.id);
 
@@ -101,7 +106,12 @@ export async function broadcastRefundTx(order: any, sellerWif: string): Promise<
     totalInput += utxo.value;
   }
 
-  const minerFee = await getLiveMinerFee(null, 1, utxos.length);
+  const { satsAmount: minerFee } = await getLiveMinerFee({
+    escrowAddress: null, 
+    outputCount: 1, 
+    customUtxosCount: utxos.length,
+    customFeeRate: feeRate ?? null
+  });
   const refundOutput = totalInput - minerFee;
   
   if (refundOutput < DUST_LIMIT) throw new Error("La comisión minera supera el monto disponible en el Escrow.");

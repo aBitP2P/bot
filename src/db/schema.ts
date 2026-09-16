@@ -9,6 +9,8 @@ export const users = mysqlTable("users", {
   rating: double("rating").notNull().default(0),
   ratingCount: int("rating_count").notNull().default(0),
   ratingSum: int("rating_sum").notNull().default(0),
+
+  customFee: double("custom_fee"), 
   
   pubkey: text("pubkey"),
   encryptedWif: text("encrypted_wif"),

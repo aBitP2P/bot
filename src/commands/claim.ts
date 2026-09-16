@@ -52,7 +52,12 @@ export async function startClaimPasswordFlow(
 ) {
   const dict = ctx.dict;
   const isRefund = order.status === 'REFUNDABLE';
-  const minerFeeSats = await getLiveMinerFee(order.escrowAddress!, isRefund ? 1 : (parseFloat(process.env.BOT_FEE!) === 0.0 ? 1 : 2));
+
+  let { satsAmount: minerFeeSats, feeRate } = await getLiveMinerFee({
+    escrowAddress: order.escrowAddress!, 
+    outputCount: isRefund ? 1 : (parseFloat(process.env.BOT_FEE!) === 0 ? 1 : 2),
+    customFeeRate: ctx.user.customFee
+  });
 
   let finalAmount: number;
 
@@ -74,7 +79,7 @@ export async function startClaimPasswordFlow(
   ctx.session.claimOrderId = order.id;
 
   await ctx.reply(
-    dict.askClaimPassword(minerFeeSats, finalAmount, receivingAddress),
+    dict.askClaimPassword(minerFeeSats, finalAmount, receivingAddress, feeRate),
     { parse_mode: 'Markdown' }
   );
 }

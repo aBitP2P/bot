@@ -1,7 +1,10 @@
 import type { orders } from "../db/schema.js";
-import { Strings, getFiatEmoji, OrderStatusLabelsEN } from "../shared/constants.js"; 
+import {
+  Strings,
+  getFiatEmoji,
+  OrderStatusLabelsEN,
+} from "../shared/constants.js";
 import { mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
-
 
 type OrderRow = typeof orders.$inferSelect;
 
@@ -24,10 +27,12 @@ export default {
     `/setpass — Encrypt your profile with a password\n` +
     `/setlang — Switch language\n` +
     "/fees - Check the fees applied for your orders \n" +
+    "/setfee - Sets the network fee to be used\n" +
     `/exit — Cancel current action\n\n` +
     `📢 Channel: ${Strings.ORDER_CHANNEL_TAG} \n` +
     `💬 Group: ${Strings.GENERAL_CHAT_TAG}`,
-  commandUsage: (usage: string) => `⚠️ *Usage:* \`${usage}\``,
+  commandUsage: (usage: string, example?: string) =>
+    `⚠️ *Usage:* \`${usage}\` ${example ? `💡 \`${example}\`` : ""}`,
   cancelled: "❌ Process cancelled.",
   btnYes: "✅ Yes, continue",
   btnNo: "❌ No, cancel",
@@ -65,18 +70,18 @@ export default {
   promptAmount: "Indicate the amount or range (Ex: 50-1000 or 100)",
   promptMargin: "Select the margin using the buttons below 👇",
   promptPaymentMethod: "Type the payment method (Ex: Zelle, Bank Transfer)",
-  invalidAmountAfterMargin:
-    ({
-      margin,
-      satsAmount,
-      minFiatRequired,
-      fiatCode,
-    }: {
-      margin: number,
-      satsAmount: number,
-      minFiatRequired: number,
-      fiatCode: string
-    }) => `⚠️ *Insufficient amount after applying margin*\n\n` +
+  invalidAmountAfterMargin: ({
+    margin,
+    satsAmount,
+    minFiatRequired,
+    fiatCode,
+  }: {
+    margin: number;
+    satsAmount: number;
+    minFiatRequired: number;
+    fiatCode: string;
+  }) =>
+    `⚠️ *Insufficient amount after applying margin*\n\n` +
     `After applying your ${margin}% margin, the total to receive dropped to ${satsAmount.toLocaleString()} sats.\n\n` +
     `To meet the minimum of 60,000 sats, you must start the order with at least *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
     `🔄 Please start the order creation again.`,
@@ -135,7 +140,9 @@ export default {
     "✅ *Order successfully published in the channel!*\n" +
     "You can cancel it using `/cancel " +
     orderId +
-    "`\n" + "👉 " + Strings.ORDER_CHANNEL_TAG,
+    "`\n" +
+    "👉 " +
+    Strings.ORDER_CHANNEL_TAG,
   listOrders: (list: OrderRow[]) => {
     if (list.length === 0) return "📭 You have no registered orders.";
 
@@ -170,7 +177,7 @@ export default {
     );
   },
   orderExpiredCancelled: (orderId: string) =>
-  `⌛ *Order expired*\n\nYour order \`${orderId}\` has exceeded the 24-hour limit without being taken. It has been automatically cancelled and removed from the channel.`,
+    `⌛ *Order expired*\n\nYour order \`${orderId}\` has exceeded the 24-hour limit without being taken. It has been automatically cancelled and removed from the channel.`,
 
   // ─────────────────────────── Matchmaking & Confirmations ───────────────────────────
   orderTaken: "⚠️ This order has already been taken by someone else.",
@@ -231,8 +238,10 @@ export default {
     `This order allows a range of **${range} ${fiat}**.\n\n` +
     `💬 *Please type in the chat the exact amount* you wish to trade for (numbers only):`,
   askBuyerAddress: (estimatedSats: number) =>
-    "📍 *Please, send your on-chain Bitcoin address* where you will receive the funds.\n_(Make sure it is correct, we are not responsible for mistakes)_\n\n" + 
-    "The estimated amount to be received is: `" + estimatedSats / 100_000_000 + "` BTC before network fees.",
+    "📍 *Please, send your on-chain Bitcoin address* where you will receive the funds.\n_(Make sure it is correct, we are not responsible for mistakes)_\n\n" +
+    "The estimated amount to be received is: `" +
+    estimatedSats / 100_000_000 +
+    "` BTC before network fees.",
   waitMaker:
     "⏳ Perfect. Please, *wait for the counterparty to confirm* if they wish to proceed with the order.",
   waitTaker:
@@ -250,7 +259,7 @@ export default {
   escrowUnconfirmed: (txid: string) =>
     `⏳ *Transaction detected on the network.*\n\n` +
     `ID: \`${txid}\`\n` +
-    `[View in explorer](${mempoolBaseURL}/tx/${txid})\n` + 
+    `[View in explorer](${mempoolBaseURL}/tx/${txid})\n` +
     `_Waiting for 2 confirmations to proceed safely..._`,
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *Escrow Funded and Confirmed!*\n\n` +
@@ -262,7 +271,11 @@ export default {
     `Your funds are secured in the smart contract.\n\n` +
     `🗣 **Contact the buyer here:** ${buyerContact}\n\n` +
     `_Instructions: Wait for the buyer's payment. Once you verify the money is in your account, run the command_ \`/release ${orderId}\` _to release the funds._`,
-  feesList: (botFee: string, feesData: MempoolFeesData) =>
+  feesList: (
+    botFee: string,
+    feesData: MempoolFeesData,
+    customFee?: number | null,
+  ) =>
     "⚡ *Network Fees (Mempool)*\n\n" +
     "┌ ▸ Fast 🚀\n" +
     `│   \`${feesData.fastestFee}\` sat/vB\n` +
@@ -270,15 +283,24 @@ export default {
     `│   \`${feesData.halfHourFee}\` sat/vB\n` +
     "├ ▸ Slow 🐢\n" +
     `│   \`${feesData.hourFee}\` sat/vB\n` +
-    "└ ▸ *Economy* ✅ *(used by the bot)*\n" +
+    `└ ▸ *Economy*${customFee ? "" : " ✅ *(default)*"}\n` +
     `    \`${feesData.economyFee}\` sat/vB\n\n` +
+    (customFee
+      ? `🎯 *Your Custom Fee* ✅ *(active)*\n   \`${customFee}\` sat/vB\n\n`
+      : "") +
     "━━━━━━━━━━━━━━━━━━━━\n\n" +
     "🤖 *Bot Fee*\n" +
     `   \`${botFee}%\`\n` +
     "   └ Split 50/50 between both parties\n\n" +
-    "💡 The economy fee is sufficient for " +
-    "the transaction to confirm within a few hours without overpaying.",
+    "💡 " +
+    (customFee
+      ? "You are using your custom network fee instead of the economy one. You can update it anytime with /setfee."
+      : "The economy fee is sufficient for the transaction to confirm in the next few hours without overpaying."),
   couldNotFetchFees: "❌ Could not fetch actual fees, try again later.",
+  customFeeChanged: (newFee: number) =>
+    `✅ The network fee has been set to ${newFee} sats/vB`,
+  resetFeeButton: "♻️ Return to default (Economy)",
+  feeResetSuccess: "✅ Your fee has been reset to the default economy setting.",
   errorProcessingTx: (err: string) => `❌ *Network error:*\n\`${err}\``,
 
   // ─────────────────────────── Fiat & Release ───────────────────────────
@@ -300,22 +322,27 @@ export default {
     `🎉 *The seller has released the funds!*\n\n` +
     `The escrow is ready to be claimed. Run the following command to start the withdrawal to your wallet:\n\n` +
     `\`/claim ${orderId}\``,
+  rangeOrderPartiallyCompleted: (newOrderId: string, newAmountFiat: string, fiatCode: string) =>
+    `ℹ️ Your range order has been partially completed. A new order (\`${newOrderId}\`) has been republished for the remaining balance: *${newAmountFiat} ${fiatCode}* in ${Strings.ORDER_CHANNEL_TAG}.`,
 
   // --------------------------- Rating -----------------------------------
   rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",
-  ratingDone: (stars: number) => `⭐ You have rated your counterpart with ${stars} stars.`,
+  ratingDone: (stars: number) =>
+    `⭐ You have rated your counterpart with ${stars} stars.`,
 
   // ─────────────────────────── Claim & Refund ───────────────────────────
   askClaimPassword: (
     minerFee: number,
     finalAmount: number,
     receivingAddress: string,
+    minerFeeRate: number,
   ) =>
     `🔐 *Claim Funds*\n\n` +
     `**Transaction breakdown:**\n` +
     `├ Address: \`${receivingAddress}\`\n` +
-    `├ Miner fee (est): \`-${minerFee / 100_000_000} BTC\`\n` +
+    `├ Miner fee (est): \`-${minerFee / 100_000_000} BTC\` (${minerFeeRate} sats/vB)\n` +
     `└ **You will receive approx:** \`${finalAmount / 100_000_000} BTC\`\n\n` +
+    `💡 *Note:* If you don't agree with the mining fee, you can send /exit to cancel and use /setfee to set your own rate.\n\n` +
     `Please, **type your password** to cryptographically sign the withdrawal to your wallet:`,
   psbtSigningLoading: `⏳ *Co-signing and broadcasting to the network...*`,
   claimSuccess: (txid: string) =>
@@ -327,7 +354,8 @@ export default {
     `ℹ️ *Order Cancelled*\n\nThe seller claimed the refund for order \`${orderId}\`. The escrow funds have been returned.`,
 
   // ─────────────────────────── Cancellations ───────────────────────────
-  selectOrderToCancel: "👉 Select the order you want to cancel, you can check details by using /listorders",
+  selectOrderToCancel:
+    "👉 Select the order you want to cancel, you can check details by using /listorders",
   cancelNotAllowed: `❌ You cannot cancel the order in this state. If the payment was already sent, you must open a dispute.`,
   cancelUnconfirmed: `⏳ The order has an unconfirmed transaction on the network. You must wait for 2 confirmation before initiating a cancellation.`,
   cancelAlreadyRequested: `⏳ You have already requested the cancellation. Waiting for your counterparty to accept and sign.`,
@@ -468,10 +496,18 @@ export default {
   invalidFiatCode: "❌ Entered fiat code is invalid, please try again:",
   orderAlreadyRated: "❌ The counterparty had already been rated.",
   couldNotApplyMargin: "❌ Unknown error applying margin, please try again.",
-  couldNotFetchPrice: "❌ Unknown error fetching currency code, please try again:",
-  priceApiErrorRepublish: "❌ *Connection error calculating the price.*\n\nThe agreement was cancelled and the order has been automatically republished in the channel. Please try again later.",
-  makerTimeoutNotifyMaker: (orderId: string) => `❌ *Order cancelled due to inactivity*\n\nYour order \`${orderId}\` was cancelled because you didn't confirm the request in time.`,
-  makerTimeoutNotifyTaker: (orderId: string) => `❌ *Order cancelled*\n\nThe creator of order \`${orderId}\` did not respond in time. The order has been cancelled.`,
-  takerTimeoutNotifyTaker: (orderId: string) => `⏳ *Time out*\n\nYour time to complete the details for order \`${orderId}\` has expired. The order has been republished in the channel; if you still want to proceed, you must take it again.`,
-  alreadyHaveActiveOrder: "❌ You already have an order in progress. You must finish or cancel it before taking another one.",
+  couldNotFetchPrice:
+    "❌ Unknown error fetching currency code, please try again:",
+  priceApiErrorRepublish:
+    "❌ *Connection error calculating the price.*\n\nThe agreement was cancelled and the order has been automatically republished in the channel. Please try again later.",
+  makerTimeoutNotifyMaker: (orderId: string) =>
+    `❌ *Order cancelled due to inactivity*\n\nYour order \`${orderId}\` was cancelled because you didn't confirm the request in time.`,
+  makerTimeoutNotifyTaker: (orderId: string) =>
+    `❌ *Order cancelled*\n\nThe creator of order \`${orderId}\` did not respond in time. The order has been cancelled.`,
+  takerTimeoutNotifyTaker: (orderId: string) =>
+    `⏳ *Time out*\n\nYour time to complete the details for order \`${orderId}\` has expired. The order has been republished in the channel; if you still want to proceed, you must take it again.`,
+  alreadyHaveActiveOrder:
+    "❌ You already have an order in progress. You must finish or cancel it before taking another one.",
+  invalidCustomFee:
+    "❌ The value must be equal to or greater than 0.8, less than 20, and have up to 2 decimal places.",
 };

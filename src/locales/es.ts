@@ -27,10 +27,12 @@ export default {
     `/setpass — Encripta tu perfil a partir de una contraseña\n` +
     `/setlang — Cambia de idioma\n` +
     "/fees - Revisa como están las comisiones para tus órdenes \n" +
+    "/setfee - Establece la comisión de red que se usará\n" + 
     `/exit — Cancelar la acción actual\n\n` +
     `📢 Canal: ${Strings.ORDER_CHANNEL_TAG}\n` +
     `💬 Grupo: ${Strings.GENERAL_CHAT_TAG}`,
-  commandUsage: (usage: string) => `⚠️ *Uso:* \`${usage}\``,
+  commandUsage: (usage: string, example?: string) =>
+    `⚠️ *Uso:* \`${usage}\` ${example ? `💡 \`${example}\`` : ""}`,
   cancelled: "❌ Proceso cancelado.",
   btnYes: "✅ Sí, continuar",
   btnNo: "❌ No, cancelar",
@@ -69,18 +71,18 @@ export default {
   promptAmount: "Indica el monto o rango (Ej: 500-1000 o 100)",
   promptMargin: "Selecciona el margen en los botones de abajo 👇",
   promptPaymentMethod: "Escribe el método de pago (Ej: Zelle, Transferencia)",
-  invalidAmountAfterMargin:
-    ({
-      margin,
-      satsAmount,
-      minFiatRequired,
-      fiatCode,
-    }: {
-      margin: number,
-      satsAmount: number,
-      minFiatRequired: number,
-      fiatCode: string
-    }) => `⚠️ *Monto insuficiente tras aplicar margen*\n\n` +
+  invalidAmountAfterMargin: ({
+    margin,
+    satsAmount,
+    minFiatRequired,
+    fiatCode,
+  }: {
+    margin: number;
+    satsAmount: number;
+    minFiatRequired: number;
+    fiatCode: string;
+  }) =>
+    `⚠️ *Monto insuficiente tras aplicar margen*\n\n` +
     `Al aplicar tu margen del ${margin}%, el total a recibir bajó a ${satsAmount.toLocaleString()} sats.\n\n` +
     `Para cumplir con el mínimo de 60,000 sats, debes iniciar la orden con al menos *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
     `🔄 Por favor, inicia la creación de la orden nuevamente.`,
@@ -176,7 +178,7 @@ export default {
     );
   },
   orderExpiredCancelled: (orderId: string) =>
-  `⌛ *Orden expirada*\n\nTu orden \`${orderId}\` ha superado las 24 horas publicada sin ser tomada. Ha sido cancelada automáticamente y retirada del canal.`,
+    `⌛ *Orden expirada*\n\nTu orden \`${orderId}\` ha superado las 24 horas publicada sin ser tomada. Ha sido cancelada automáticamente y retirada del canal.`,
 
   // ─────────────────────────── Matchmaking & Confirmations ───────────────────────────
   orderTaken: "⚠️ Esta orden ya fue tomada por otra persona.",
@@ -270,7 +272,11 @@ export default {
     `Tus fondos están asegurados en el contrato inteligente.\n\n` +
     `🗣 **Contacta al comprador aquí:** ${buyerContact}\n\n` +
     `_Instrucciones: Espera el pago del comprador. Una vez que verifiques que el dinero está en tu cuenta, ejecuta el comando_ \`/release ${orderId}\` _para liberar los fondos._`,
-  feesList: (botFee: string, feesData: MempoolFeesData) =>
+  feesList: (
+    botFee: string,
+    feesData: MempoolFeesData,
+    customFee?: number | null,
+  ) =>
     "⚡ *Tarifas de Red (Mempool)*\n\n" +
     "┌ ▸ Rápida 🚀\n" +
     `│   \`${feesData.fastestFee}\` sat/vB\n` +
@@ -278,16 +284,26 @@ export default {
     `│   \`${feesData.halfHourFee}\` sat/vB\n` +
     "├ ▸ Lenta 🐢\n" +
     `│   \`${feesData.hourFee}\` sat/vB\n` +
-    "└ ▸ *Económica* ✅ *(usada por el bot)*\n" +
+    "└ ▸ *Económica* ✅ *(usada por defecto)*\n" +
     `    \`${feesData.economyFee}\` sat/vB\n\n` +
+    (customFee
+      ? `🎯 *Tu Tarifa Personalizada* ✅ *(activa)*\n   \`${customFee}\` sat/vB\n\n`
+      : "") +
     "━━━━━━━━━━━━━━━━━━━━\n\n" +
     "🤖 *Comisión del Bot*\n" +
     `   \`${botFee}%\`\n` +
     "   └ Se divide 50/50 entre ambas partes\n\n" +
-    "💡 La tarifa económica es suficiente para " +
-    "que la transacción se confirme en las próximas horas sin pagar de más.",
+    "💡 " +
+    (customFee
+      ? "Estás usando tu tarifa de red personalizada en lugar de la económica. Puedes actualizarla cuando quieras con /setfee."
+      : "La tarifa económica es suficiente para que la transacción se confirme en las próximas horas sin pagar de más."),
+  customFeeChanged: (newFee: number) =>
+    `✅ La comisión de red ha sido establecida a ${newFee} sats/vB`,
   couldNotFetchFees:
     "❌ No se ha podido conseguir las fees actuales, inténtalo de nuevo más tarde.",
+  resetFeeButton: "♻️ Volver por defecto (Económica)",
+  feeResetSuccess:
+    "✅ Tu tarifa ha vuelto a la configuración económica por defecto.",
   errorProcessingTx: (err: string) => `❌ *Error en la red:*\n\`${err}\``,
 
   // ─────────────────────────── Fiat & Release ───────────────────────────
@@ -309,6 +325,12 @@ export default {
     `🎉 *¡El vendedor ha liberado los fondos!*\n\n` +
     `El escrow está listo para ser reclamado. Ejecuta el siguiente comando para iniciar el retiro a tu billetera:\n\n` +
     `\`/claim ${orderId}\``,
+  rangeOrderPartiallyCompleted: (
+    newOrderId: string,
+    newAmountFiat: string,
+    fiatCode: string,
+  ) =>
+    `ℹ️ Tu orden de rango ha sido completada parcialmente. Se ha republicado una nueva orden (\`${newOrderId}\`) por el saldo restante: *${newAmountFiat} ${fiatCode}* en ${Strings.ORDER_CHANNEL_TAG}.`,
 
   // --------------------------- Rating -----------------------------------
   rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",
@@ -320,12 +342,14 @@ export default {
     minerFee: number,
     finalAmount: number,
     receivingAddress: string,
+    minerFeeRate: number,
   ) =>
     `🔐 *Reclamar Fondos*\n\n` +
     `**Desglose de la transacción:**\n` +
     `├ Dirección: \`${receivingAddress}\`\n` +
-    `├ Comisión minera (est): \`-${minerFee / 100_000_000} BTC\`\n` +
+    `├ Comisión minera (est): \`-${minerFee / 100_000_000} BTC\` (${minerFeeRate} sats/vB)\n` +
     `└ **Recibirás aprox:** \`${finalAmount / 100_000_000} BTC\`\n\n` +
+    `💡 *Nota:* Si no estás de acuerdo con la comisión minera, puedes enviar /exit para cancelar y usar /setfee para establecer tu propia tarifa.\n\n` +
     `Por favor, **escribe tu contraseña** para firmar criptográficamente el retiro hacia tu billetera:`,
   psbtSigningLoading: `⏳ *Co-firmando y transmitiendo a la red...*`,
   claimSuccess: (txid: string) =>
@@ -479,11 +503,20 @@ export default {
   maxOrdersReached: "❌ Haz alcanzado el límite de órdenes creadas por ti.",
   invalidFiatCode: "❌ El código fiat no fue reconocido, intenta de nuevo:",
   orderAlreadyRated: "❌ La contraparte ya había sido calificada.",
-  couldNotApplyMargin: "❌ Error desconocido al aplicar el margen, intenta de nuevo.",
-  couldNotFetchPrice: "❌ Error desconocido al buscar el código de la moneda, intenta de nuevo:",
-  priceApiErrorRepublish: "❌ *Error de conexión al calcular el precio.*\n\nEl acuerdo fue cancelado y la orden se ha vuelto a publicar automáticamente en el canal. Por favor, inténtalo de nuevo más tarde.",
-  makerTimeoutNotifyMaker: (orderId: string) => `❌ *Orden cancelada por inactividad*\n\nTu orden \`${orderId}\` ha sido cancelada porque no confirmaste la solicitud a tiempo.`,
-  makerTimeoutNotifyTaker: (orderId: string) => `❌ *Orden cancelada*\n\nEl creador de la orden \`${orderId}\` no respondió a tiempo. La orden ha sido cancelada.`,
-  takerTimeoutNotifyTaker: (orderId: string) => `⏳ *Tiempo agotado*\n\nTu tiempo para completar los detalles de la orden \`${orderId}\` ha expirado. La orden fue republicada en el canal; si aún deseas proceder, deberás tomarla nuevamente.`,
-  alreadyHaveActiveOrder: "❌ Ya tienes una orden en proceso. Debes terminarla o cancelarla antes de tomar otra.",
+  couldNotApplyMargin:
+    "❌ Error desconocido al aplicar el margen, intenta de nuevo.",
+  couldNotFetchPrice:
+    "❌ Error desconocido al buscar el código de la moneda, intenta de nuevo:",
+  priceApiErrorRepublish:
+    "❌ *Error de conexión al calcular el precio.*\n\nEl acuerdo fue cancelado y la orden se ha vuelto a publicar automáticamente en el canal. Por favor, inténtalo de nuevo más tarde.",
+  makerTimeoutNotifyMaker: (orderId: string) =>
+    `❌ *Orden cancelada por inactividad*\n\nTu orden \`${orderId}\` ha sido cancelada porque no confirmaste la solicitud a tiempo.`,
+  makerTimeoutNotifyTaker: (orderId: string) =>
+    `❌ *Orden cancelada*\n\nEl creador de la orden \`${orderId}\` no respondió a tiempo. La orden ha sido cancelada.`,
+  takerTimeoutNotifyTaker: (orderId: string) =>
+    `⏳ *Tiempo agotado*\n\nTu tiempo para completar los detalles de la orden \`${orderId}\` ha expirado. La orden fue republicada en el canal; si aún deseas proceder, deberás tomarla nuevamente.`,
+  alreadyHaveActiveOrder:
+    "❌ Ya tienes una orden en proceso. Debes terminarla o cancelarla antes de tomar otra.",
+  invalidCustomFee:
+    "❌ El valor debe ser igual o mayor a 0.8, menor a 20 y tener hasta 2 decimales.",
 };

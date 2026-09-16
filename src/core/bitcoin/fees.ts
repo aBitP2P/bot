@@ -39,22 +39,40 @@ export function getBotFeeAddress(index: number): string {
   return address!;
 }
 
-export async function getLiveMinerFee(escrowAddress: string | null, outputCount: number = 1, customUtxosCount?: number): Promise<number> {
+export async function getLiveMinerFee(params: {
+  escrowAddress?: string | null;
+  outputCount?: number;
+  customUtxosCount?: number;
+  customFeeRate?: number | null;
+}): Promise<{
+  satsAmount: number;
+  feeRate: number;
+}> {
   try {
-    const feeRes = await fetch(getMempoolApiPath("v1/fees/recommended"));
-    const fees = await feeRes.json();
-    const feeRate = fees.economyFee;
+    // Valores por defecto
+    const outputCount = params.outputCount ?? 1;
+    let feeRate = params.customFeeRate;
 
-    let utxoCount = customUtxosCount || 1;
-    if (escrowAddress !== null) {
-      const utxoRes = await fetch(getMempoolApiPath(`/address/${escrowAddress}/utxo`));
+    if (!feeRate) {
+      const feeRes = await fetch(getMempoolApiPath("v1/fees/recommended"));
+      const fees = await feeRes.json();
+      feeRate = fees.economyFee;
+    }
+
+    let utxoCount = params.customUtxosCount || 1;
+    if (params.escrowAddress) {
+      const utxoRes = await fetch(getMempoolApiPath(`/address/${params.escrowAddress}/utxo`));
       utxoCount = (await utxoRes.json()).length || 1;
     }
 
     const estimatedVBytes = 10.5 + (outputCount * 31) + (utxoCount * 104.5);
-    return Math.ceil(estimatedVBytes * feeRate);
+    
+    return { 
+      satsAmount: Math.ceil(estimatedVBytes * feeRate!), 
+      feeRate: feeRate!
+    };
   } catch (error) {
-    return 250; // Fallback
+    return { satsAmount: 250, feeRate: params.customFeeRate || 2 }; 
   }
 }
 

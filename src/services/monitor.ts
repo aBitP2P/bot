@@ -41,6 +41,7 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
     }
 
     for (const order of pendingOrders) {
+      await new Promise(res => setTimeout(res, 500));
       if (!order.escrowAddress) continue;
 
       const fundingInfo = await checkEscrowFunding(
@@ -111,6 +112,24 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
           dictBuyer.escrowConfirmedBuyer(sellerContact, order.id),
           { parse_mode: "Markdown" },
         );
+
+        const excessSats = fundingInfo.totalFundedSats - expectedSats;
+        if (excessSats > 546) { 
+          const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
+          if (ADMIN_GROUP_ID) {
+            const sellerUsername = seller?.username ? escapeMarkdown(seller.username) : `ID: ${sellerId}`;
+            await bot.telegram.sendMessage(
+              ADMIN_GROUP_ID,
+              `⚠️ *ALERTA DE SOBRE-FONDEO*\n\n` +
+              `El vendedor @${sellerUsername} ha enviado más fondos de los solicitados en la orden \`${order.id}\`.\n\n` +
+              `Esperado: \`${expectedSats}\` sats\n` +
+              `Recibido: \`${fundingInfo.totalFundedSats}\` sats\n` +
+              `Exceso a recuperar: \`${excessSats}\` sats\n\n` +
+              `_Nota: El exceso será enviado a la billetera de comisiones del bot al finalizar la orden (ejecución de /release). Contacte al usuario para coordinar el reembolso._`,
+              { parse_mode: "Markdown" }
+            );
+          }
+        }
       }
     }
   }, 60000);
@@ -161,10 +180,6 @@ export function startOrderTimeoutsMonitor(bot: Telegraf<BotContext>) {
             } catch (e) { }
           }
         }
-      }
-
-      for (const order of takerTimeouts) {
-        await republishOrderSilently(bot, order.id);
       }
 
       const makerTimeouts = await db.select().from(orders).where(

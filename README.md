@@ -40,7 +40,7 @@
 [ Vendedor ] ────────────> [ Envía BTC al Escrow ]
                                       │
                                       ▼
-                      [ Monitor detecta 1 confirmación ]
+                      [ Monitor detecta 2 confirmaciones ]
                                       │
                                       ▼
 [ Comprador ] ── Pago Fiat ─> [ /fiatsent ]
@@ -119,6 +119,9 @@ DATABASE_URL="mysql://user:pass@host:3306/dbname?ssl={\"rejectUnauthorized\":tru
 |---|---|
 | `/start` | Mensaje de bienvenida e información inicial. |
 | `/setpass` | Configura la contraseña segura para cifrar la clave privada local. |
+| `/setlang` | Cambia de idioma. |
+| `/fees` | Revisa cómo están las comisiones para tus órdenes. |
+| `/setfee` | Establece la comisión de red que se usará. |
 | `/buy` | Inicia el asistente interactivo para crear una oferta de compra. |
 | `/sell` | Inicia el asistente interactivo para crear una oferta de venta. |
 | `/listorders` | Muestra un listado de las órdenes activas del usuario. |

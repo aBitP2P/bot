@@ -4,16 +4,13 @@ import { generateWif, getPubkeyFromWif } from "../core/bitcoin/index.js";
 import { encryptData } from "../utils/crypto.js";
 import { users } from "../db/schema.js";
 import { db } from "../db/index.js";
+import { safeDeleteMsg } from "../utils/telegram.js";
 
 export async function setPassStep(ctx: CommandContext) {
   const password = ctx.message.text;
   const userId = ctx.from.id;
 
-  try {
-    await ctx.deleteMessage();
-  } catch (e) {
-    console.error("No se pudo borrar el msj de la contraseña");
-  }
+  await safeDeleteMsg(ctx);
 
   if (!ctx.session.passwordToConfirm) {
     ctx.session.passwordToConfirm = password;
@@ -37,7 +34,6 @@ export async function setPassStep(ctx: CommandContext) {
     .where(eq(users.telegramId, userId));
 
   ctx.session.step = "IDLE";
-  ctx.dict;
 
   return ctx.reply(ctx.dict.passwordSetSuccess, { parse_mode: "Markdown" });
 }

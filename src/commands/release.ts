@@ -3,50 +3,90 @@ import {
   getOrder,
   tryTransitionOrderStatus,
 } from "../db/orders.js";
-import type { CommandContext } from "../types.js";
+import type { CallbackContext, CommandContext, OrderRecord } from "../types.js";
 import { getUser } from "../db/users.js";
-import { dictionaries, t, type Language } from "../locales/index.js";
+import { getUserDict, t, type Language } from "../locales/index.js";
 import {
+  buildOrderSelectKeyboard,
   buildRatingKeyboard,
   buildTakeOrderKeyboard,
 } from "../shared/keyboards.js";
 import { db } from "../db/index.js";
 import { orders, users } from "../db/schema.js";
-import { eq, inArray, sql } from "drizzle-orm";
-import crypto from "node:crypto";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { escapeMarkdown } from "../utils/format.js";
+import { OrderStatus } from "../shared/constants.js";
+import { Markup } from "telegraf";
+import { getParties } from "../utils/order.js";
+import { generateOrderId } from "../utils/crypto.js";
 
 export async function releaseCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
-  const dict = ctx.dict;
 
   const args = ctx.message.text.split(" ");
-  if (args.length < 2)
-    return ctx.reply(dict.commandUsage("/release <ORDER_ID>"), {
-      parse_mode: "Markdown",
-    });
+  if (args.length < 2) {
+    const fiatSentOrders = await db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.status, OrderStatus.FIAT_SENT),
+          or(
+            and(eq(orders.type, "SELL"), eq(orders.creatorId, userId)),
+            and(eq(orders.type, "BUY"), eq(orders.takerId, userId)),
+          ),
+        ),
+      );
+    if (fiatSentOrders.length === 0)
+      await ctx.reply(ctx.dict.noReleasableOrdersFound, {
+        parse_mode: "Markdown",
+      });
+    else
+      await ctx.reply(ctx.dict.selectReleasableOrder, {
+        ...buildOrderSelectKeyboard(fiatSentOrders, "releaseCommand"),
+      });
+    return;
+  }
 
   const orderId = args[1] as string;
-  const order = await getOrder(orderId);
+  await askReleaseConfirmation(ctx, orderId);
+}
 
-  if (!order) return ctx.reply(dict.orderNotFound);
-  if (order.status !== "FIAT_SENT")
-    return ctx.reply(dict.waitForBuyerFiatSent(orderId), {
+
+export async function askReleaseConfirmation(ctx: CallbackContext | CommandContext, orderId: string) {
+  const userId = ctx.from.id;
+
+  try { if (ctx.callbackQuery) await ctx.deleteMessage(); } catch (e) {}
+  const order = await getOrder(orderId);
+  if (!order) return ctx.reply(ctx.dict.orderNotFound);
+  if (order.status !== OrderStatus.FIAT_SENT)
+    return ctx.reply(ctx.dict.waitForBuyerFiatSent(order.id), {
       parse_mode: "Markdown",
     });
+  
+  const { buyerId, sellerId } = getParties(order);
+  if (userId !== sellerId) return ctx.reply(ctx.dict.onlySeller);
 
-  const isCreatorSelling = order.type === "SELL";
-  const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
-  const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
+  const buyer = await getUser(buyerId!);
+  return await ctx.reply(ctx.dict.askReleaseConfirmation(buyer!.username), {
+    parse_mode: "Markdown",
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback(ctx.dict.btnYes, "confirmRelease_" + order.id)],
+      [Markup.button.callback(ctx.dict.btnNo, "cancelRelease")]
+    ])
+  })
+}
 
-  if (userId !== sellerId) return ctx.reply(dict.onlySeller);
+export async function doFundsRelease(ctx: CallbackContext | CommandContext, order: OrderRecord) {
+  const { buyerId, sellerId } = getParties(order);  
+  try { if (ctx.callbackQuery) await ctx.deleteMessage(); } catch (e) {}
 
   const didRelease = await tryTransitionOrderStatus(
-    orderId,
-    ["FIAT_SENT"],
-    "RELEASABLE",
+    order.id,
+    [OrderStatus.FIAT_SENT],
+    OrderStatus.RELEASABLE,
   );
-  if (!didRelease) return ctx.reply(dict.invalidOrderStatus);
+  if (!didRelease) return ctx.reply(ctx.dict.invalidOrderStatus);
 
   await db
     .update(users)
@@ -54,16 +94,16 @@ export async function releaseCommand(ctx: CommandContext) {
     .where(inArray(users.telegramId, [sellerId!, buyerId!]));
 
   const buyer = await getUser(buyerId!);
-  const dictBuyer = dictionaries[(buyer?.language as Language) || "es"];
+  const dictBuyer = getUserDict(buyer?.language);
 
-  await ctx.reply(dict.releaseSuccessSeller(order.id), {
+  await ctx.reply(ctx.dict.releaseSuccessSeller(order.id), {
     parse_mode: "Markdown",
   });
   await ctx.telegram.sendMessage(buyerId!, dictBuyer.releaseToBuyer(order.id), {
     parse_mode: "Markdown",
   });
 
-  await ctx.reply(dict.rateCounterpartyMessage, {
+  await ctx.reply(ctx.dict.rateCounterpartyMessage, {
     ...buildRatingKeyboard(order.id),
   });
   await ctx.telegram.sendMessage(buyerId!, dictBuyer.rateCounterpartyMessage, {
@@ -81,8 +121,7 @@ export async function releaseCommand(ctx: CommandContext) {
       const newAmountFiat =
         remainingMax === min ? `${min}` : `${min}-${remainingMax}`;
 
-      const rawHex = crypto.randomBytes(6).toString("hex").slice(0, 12);
-      const newOrderId = rawHex.match(/.{1,6}/g)!.join("-");
+      const newOrderId = generateOrderId();
 
       await createOrder({
         id: newOrderId,
@@ -96,8 +135,7 @@ export async function releaseCommand(ctx: CommandContext) {
 
       const creator = await getUser(order.creatorId);
       if (creator) {
-        const dictCreator =
-          dictionaries[(creator.language as Language) || "es"];
+        const dictCreator = getUserDict(creator.language);
         const action =
           order.type === "SELL"
             ? dictCreator.actionSell
@@ -149,7 +187,11 @@ export async function releaseCommand(ctx: CommandContext) {
 
         await ctx.telegram.sendMessage(
           order.creatorId,
-          dictCreator.rangeOrderPartiallyCompleted(newOrderId, newAmountFiat, order.fiatCode),
+          dictCreator.rangeOrderPartiallyCompleted(
+            newOrderId,
+            newAmountFiat,
+            order.fiatCode,
+          ),
           { parse_mode: "Markdown" },
         );
       }

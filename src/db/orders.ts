@@ -2,7 +2,7 @@ import { and, eq, inArray, ne, notInArray, or, type SQL } from "drizzle-orm";
 import { db } from "./index.js";
 import { orders } from "./schema.js";
 import type { ResultSetHeader } from "mysql2";
-import { TERMINAL_STATUSES } from "../shared/constants.js";
+import { OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
 
 export async function createOrder(orderData: typeof orders.$inferInsert) {
   return await db.insert(orders).values(orderData);
@@ -24,8 +24,8 @@ export async function getUserOrders(userId: number) {
     .where(
       and(
         or(eq(orders.creatorId, userId), eq(orders.takerId, userId)),
-        notInArray(orders.status, ["COMPLETED", "CANCELLED", "REFUNDED"]),
-        or(ne(orders.status, "PENDING"), eq(orders.creatorId, userId)),
+        notInArray(orders.status, [OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.REFUNDED]),
+        or(ne(orders.status, OrderStatus.PENDING), eq(orders.creatorId, userId)),
       ),
     );
 }

@@ -1,5 +1,5 @@
 import { ensureUser } from "../db/users.js";
-import { dictionaries, type Language } from "../locales/index.js";
+import { dictionaries, getUserDict } from "../locales/index.js";
 import { type BotContext } from "../types.js";
 
 export const userMiddleware = async (
@@ -34,8 +34,7 @@ export const userMiddleware = async (
 
   if (userRecord) {
     ctx.user = userRecord;
-    ctx.dict =
-      dictionaries[userRecord.language as Language] || dictionaries["es"];
+    ctx.dict = getUserDict(userRecord.language);
   }
 
   return next();

@@ -4,12 +4,13 @@ import {
   tryTransitionOrderStatus,
 } from "../db/orders.js";
 import { getUser } from "../db/users.js";
-import { dictionaries, type Language } from "../locales/index.js";
+import { getUserDict } from "../locales/index.js";
 import type { CallbackContext, CommandContext } from "../types.js";
 import { handleOrderCancelledRepublish } from "../handlers/orderHandler.js";
-import { TERMINAL_STATUSES } from "../shared/constants.js";
-import { buildCancelOrderKeyboard } from "../shared/keyboards.js";
+import { OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
+import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { checkEscrowFunding } from "../core/bitcoin/transactions.js";
+import { getParties } from "../utils/order.js";
 
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -22,7 +23,7 @@ export async function cancelCommand(ctx: CommandContext) {
     let userOrders = await getUserOrders(userId);
     if (userOrders.length === 0) return ctx.reply(dict.noOrdersFound);
     await ctx.reply(dict.selectOrderToCancel , {
-      ...buildCancelOrderKeyboard(userOrders)
+      ...buildOrderSelectKeyboard(userOrders, "cancelCommand")
     });
     return;
   }
@@ -42,17 +43,15 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
     return ctx.reply(dict.cancelNotAllowed);
   }
 
-  const isCreatorSelling = order.type === "SELL";
-  const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
-  const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
+  const { buyerId, sellerId } = getParties(order);
 
-  if (order.status === "PENDING") {
+  if (order.status === OrderStatus.PENDING) {
     if (order.creatorId !== userId) return ctx.reply(dict.unauthorizedAccess);
 
     const didCancel = await tryTransitionOrderStatus(
       orderId,
-      ["PENDING"],
-      "CANCELLED",
+      [OrderStatus.PENDING],
+      OrderStatus.CANCELLED,
     );
     if (!didCancel) return ctx.reply(dict.cancelNotAllowed); // alguien más ya la tomó justo ahora
 
@@ -77,7 +76,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
   const counterpartyId = userId === sellerId ? buyerId : sellerId;
 
   switch (order.status) {
-    case "WAITING_ESCROW": {
+    case OrderStatus.WAITING_ESCROW: {
       if (userId !== sellerId) return ctx.reply(dict.cancelOnlySeller);
 
       if (order.escrowAddress) {
@@ -89,15 +88,14 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
       const didCancel = await tryTransitionOrderStatus(
         orderId,
-        ["WAITING_ESCROW"],
-        "CANCELLED",
+        [OrderStatus.WAITING_ESCROW],
+        OrderStatus.CANCELLED,
       );
       if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
 
       if (counterpartyId) {
         const counterparty = await getUser(counterpartyId);
-        const cDict =
-          dictionaries[(counterparty?.language as Language) || "es"];
+        const cDict = getUserDict(counterparty?.language);
         await ctx.telegram.sendMessage(
           counterpartyId,
           cDict.counterpartyCanceledDeleted(order.id),
@@ -109,8 +107,8 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
       return;
     }
 
-    case "WAITING_TAKER_CONFIRMATION":
-    case "WAITING_MAKER_CONFIRMATION": {
+    case OrderStatus.WAITING_TAKER_CONFIRMATION:
+    case OrderStatus.WAITING_MAKER_CONFIRMATION: {
       const isOriginalCreator = userId === order.creatorId;
 
       if (isOriginalCreator) {
@@ -118,14 +116,13 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
         const didCancel = await tryTransitionOrderStatus(
           orderId,
           [order.status],
-          "CANCELLED",
+          OrderStatus.CANCELLED,
         );
         if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
 
         if (counterpartyId) {
           const counterparty = await getUser(counterpartyId);
-          const cDict =
-            dictionaries[(counterparty?.language as Language) || "es"];
+          const cDict = getUserDict(counterparty?.language);
           await ctx.telegram.sendMessage(
             counterpartyId,
             cDict.counterpartyCanceledDeleted(order.id),
@@ -140,8 +137,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
       // actual ya validado arriba (no terminal) como única vía de entrada.
       if (counterpartyId) {
         const counterparty = await getUser(counterpartyId);
-        const cDict =
-          dictionaries[(counterparty?.language as Language) || "es"];
+        const cDict = getUserDict(counterparty?.language);
         await ctx.telegram.sendMessage(
           counterpartyId,
           cDict.matchCancelledRepublished(order.id),
@@ -151,15 +147,15 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
       return handleOrderCancelledRepublish(ctx, orderId);
     }
 
-    case "UNCONFIRMED":
+    case OrderStatus.UNCONFIRMED:
       return ctx.reply(dict.cancelUnconfirmed);
 
-    case "ACTIVE":
-    case "FIAT_SENT": {
+    case OrderStatus.ACTIVE:
+    case OrderStatus.FIAT_SENT: {
       const didRequest = await tryTransitionOrderStatus(
         orderId,
         [order.status],
-        "CANCEL_REQUESTED",
+        OrderStatus.CANCEL_REQUESTED,
         { cancelRequestedBy: userId },
       );
       if (!didRequest) return ctx.reply(dict.cancelNotAllowed);
@@ -168,8 +164,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
       if (counterpartyId) {
         const counterparty = await getUser(counterpartyId);
-        const cDict =
-          dictionaries[(counterparty?.language as Language) || "es"];
+        const cDict = getUserDict(counterparty?.language);
         await ctx.telegram.sendMessage(
           counterpartyId,
           cDict.cancelNotifiedCounterparty(order.id),
@@ -180,7 +175,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
     }
 
     // Ya hay una solicitud pendiente: si la contraparte confirma, se habilita el reembolso.
-    case "CANCEL_REQUESTED": {
+    case OrderStatus.CANCEL_REQUESTED: {
       const requesterId = order.cancelRequestedBy;
 
       if (requesterId === userId) {
@@ -189,8 +184,8 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
       const didConfirm = await tryTransitionOrderStatus(
         orderId,
-        ["CANCEL_REQUESTED"],
-        "REFUNDABLE",
+        [OrderStatus.CANCEL_REQUESTED],
+        OrderStatus.REFUNDABLE,
         { cancelRequestedBy: null },
       );
       if (!didConfirm) return ctx.reply(dict.cancelNotAllowed);
@@ -204,7 +199,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
       if (requesterId) {
         const requester = await getUser(requesterId);
-        const rDict = dictionaries[(requester?.language as Language) || "es"];
+        const rDict = getUserDict(requester?.language)
         await ctx.telegram.sendMessage(
           requesterId,
           requesterId === sellerId

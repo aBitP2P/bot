@@ -1,34 +1,74 @@
 import { getOrder } from "../db/orders.js";
-import { getUser } from "../db/users.js";
-import { dictionaries, type Language } from "../locales/index.js";
-import type { CommandContext } from "../types.js";
+import type { BotContext, CallbackContext, CommandContext, OrderRecord } from "../types.js";
 import { getLiveMinerFee, checkEscrowFunding } from "../core/bitcoin/index.js";
 import { orders } from "../db/schema.js";
+import { db } from "../db/index.js";
+import { and, eq, or } from "drizzle-orm";
+import { OrderStatus } from "../shared/constants.js";
+import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
+import { getParties } from "../utils/order.js";
+import { safeDeleteMsg } from "../utils/telegram.js";
 
 export async function claimCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
+  const dict = ctx.dict;
 
-  const userRecord = await getUser(userId);
-  if (!userRecord) return;
+  const args = ctx.message.text.split(" ");
+  if (args.length < 2) {
+    const claimableOrders = await db
+      .select()
+      .from(orders)
+      .where(
+        or(
+          and(
+            eq(orders.status, OrderStatus.RELEASABLE),
+            or(
+              and(eq(orders.type, "SELL"), eq(orders.takerId, userId)),
+              and(eq(orders.type, "BUY"), eq(orders.creatorId, userId)),
+            ),
+          ),
+          and(
+            eq(orders.status, OrderStatus.REFUNDABLE),
+            or(
+              and(eq(orders.type, "SELL"), eq(orders.creatorId, userId)),
+              and(eq(orders.type, "BUY"), eq(orders.takerId, userId)),
+            ),
+          ),
+        ),
+      );
 
-  const dict = dictionaries[(userRecord.language as Language) || 'es'];
-
-  const args = ctx.message.text.split(' ');
-  if (args.length < 2) return ctx.reply(dict.commandUsage('/claim <ORDER_ID>'), { parse_mode: 'Markdown' });
+    if (claimableOrders.length === 0)
+      await ctx.reply(dict.noClaimableOrdersFound, { parse_mode: "Markdown" });
+    else
+      await ctx.reply(dict.selectClaimableOrder, {
+        ...buildOrderSelectKeyboard(claimableOrders, "claimCommand"),
+      });
+    return;
+  }
 
   const orderId = args[1] as string;
+  await initiateClaim(ctx, orderId);
+}
+
+export async function initiateClaim(
+  ctx: CallbackContext | CommandContext,
+  orderId: string,
+) {
+  const userId = ctx.from.id;
+  const dict = ctx.dict;
+
+  await safeDeleteMsg(ctx);
+
   const order = await getOrder(orderId);
 
   if (!order) return ctx.reply(dict.orderNotFound);
-  if (order.status !== 'RELEASABLE' && order.status !== 'REFUNDABLE') {
+  if (order.status !== OrderStatus.RELEASABLE && order.status !== OrderStatus.REFUNDABLE) {
     return ctx.reply(dict.invalidOrderStatus);
   }
 
-  const isCreatorSelling = order.type === 'SELL';
-  const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
-  const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
+  const { buyerId, sellerId } = getParties(order);
 
-  if (order.status === 'RELEASABLE') {
+  if (order.status === OrderStatus.RELEASABLE) {
     if (userId !== buyerId) return ctx.reply(dict.onlyBuyer);
     return startClaimPasswordFlow(ctx, order, order.buyerAddress!);
   }
@@ -37,26 +77,26 @@ export async function claimCommand(ctx: CommandContext) {
   if (userId !== sellerId) return ctx.reply(dict.onlySeller);
 
   if (!order.refundAddress) {
-    ctx.session.step = 'CLAIM_REFUND_ADDRESS';
+    ctx.session.step = "CLAIM_REFUND_ADDRESS";
     ctx.session.claimOrderId = order.id;
-    return ctx.reply(dict.askRefundAddress, { parse_mode: 'Markdown' });
+    return ctx.reply(dict.askRefundAddress, { parse_mode: "Markdown" });
   }
 
   return startClaimPasswordFlow(ctx, order, order.refundAddress);
 }
 
 export async function startClaimPasswordFlow(
-  ctx: CommandContext,
-  order: typeof orders.$inferSelect,
-  receivingAddress: string
+  ctx: BotContext,
+  order: OrderRecord,
+  receivingAddress: string,
 ) {
   const dict = ctx.dict;
-  const isRefund = order.status === 'REFUNDABLE';
+  const isRefund = order.status === OrderStatus.REFUNDABLE;
 
   let { satsAmount: minerFeeSats, feeRate } = await getLiveMinerFee({
-    escrowAddress: order.escrowAddress!, 
-    outputCount: isRefund ? 1 : (parseFloat(process.env.BOT_FEE!) === 0 ? 1 : 2),
-    customFeeRate: ctx.user.customFee
+    escrowAddress: order.escrowAddress!,
+    outputCount: isRefund ? 1 : parseFloat(process.env.BOT_FEE!) === 0 ? 1 : 2,
+    customFeeRate: ctx.user.customFee,
   });
 
   let finalAmount: number;
@@ -75,11 +115,11 @@ export async function startClaimPasswordFlow(
     finalAmount = baseSats - buyerFeeSats - minerFeeSats;
   }
 
-  ctx.session.step = 'CLAIM_PASSWORD';
+  ctx.session.step = "CLAIM_PASSWORD";
   ctx.session.claimOrderId = order.id;
 
   await ctx.reply(
     dict.askClaimPassword(minerFeeSats, finalAmount, receivingAddress, feeRate),
-    { parse_mode: 'Markdown' }
+    { parse_mode: "Markdown" },
   );
 }

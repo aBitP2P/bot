@@ -21,13 +21,3 @@ export async function ensureUser(telegramId: number, username: string) {
 
   return await getUser(telegramId);
 }
-
-export async function updateUserLanguage(
-  telegramId: number,
-  lang: "es" | "en",
-) {
-  await db
-    .update(users)
-    .set({ language: lang })
-    .where(eq(users.telegramId, telegramId));
-}

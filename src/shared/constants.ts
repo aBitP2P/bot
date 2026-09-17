@@ -20,8 +20,6 @@ export const OrderStatus = {
   CANCELLED: "CANCELLED",
 } as const;
 
-export type OrderStatusType = keyof typeof OrderStatus;
-
 export const TERMINAL_STATUSES = [
   OrderStatus.RELEASABLE,
   OrderStatus.REFUNDABLE,
@@ -65,12 +63,7 @@ export const OrderStatusLabelsEN: Record<string, string> = {
   [OrderStatus.CANCELLED]: "❌ Cancelled",
 };
 
-export interface FiatCodeDetail {
-  min: number;
-  emoji: string;
-}
-
-export const FiatEmojis: Record<string, string> = {
+const FiatEmojis: Record<string, string> = {
   USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", CAD: "🇨🇦", CHF: "🇨🇭",
   ARS: "🇦🇷", VES: "🇻🇪", COP: "🇨🇴", MXN: "🇲🇽", PEN: "🇵🇪",
   CLP: "🇨🇱", BRL: "🇧🇷", BOB: "🇧🇴", PYG: "🇵🇾", UYU: "🇺🇾",

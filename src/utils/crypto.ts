@@ -35,3 +35,8 @@ export function decryptData(encryptedString: string, password: string): string {
 export function generateVerificationCode(): string {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 }
+
+export function generateOrderId(): string {
+  const rawHex = crypto.randomBytes(8).toString("hex").slice(0, 16);
+  return rawHex.match(/.{1,8}/g)!.join("-");
+}

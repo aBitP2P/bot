@@ -6,13 +6,15 @@ import {
   tryConditionalUpdate,
 } from "../db/orders.js";
 import { getUser } from "../db/users.js";
-import { dictionaries, type Language } from "../locales/index.js";
-import type { BotContext, CommandContext, CallbackContext } from "../types.js";
+import { dictionaries, getUserDict } from "../locales/index.js";
+import type { CommandContext, CallbackContext } from "../types.js";
 import { generateVerificationCode } from "../utils/crypto.js";
 import { isAdmin } from "../utils/admin.js";
-import { Markup } from "telegraf";
 import { buildSettleDisputeKeyboard } from "../shared/keyboards.js";
 import { escapeMarkdown } from "../utils/format.js";
+import { getParties } from "../utils/order.js";
+import { safeRemoveMarkup } from "../utils/telegram.js";
+import { OrderStatus } from "../shared/constants.js";
 
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
 
@@ -27,18 +29,7 @@ const disputeCodesCache = new Map<
   { buyerCode: string; sellerCode: string }
 >();
 
-const DISPUTE_ELIGIBLE_STATUSES = ["ACTIVE", "FIAT_SENT", "CANCEL_REQUESTED"];
-
-function getPartyIds(order: typeof orders.$inferSelect): {
-  sellerId: number | null;
-  buyerId: number | null;
-} {
-  const isCreatorSelling = order.type === "SELL";
-  return {
-    sellerId: isCreatorSelling ? order.creatorId : order.takerId,
-    buyerId: isCreatorSelling ? order.takerId : order.creatorId,
-  };
-}
+const DISPUTE_ELIGIBLE_STATUSES = [OrderStatus.ACTIVE, OrderStatus.FIAT_SENT, OrderStatus.CANCEL_REQUESTED];
 
 async function getDisplayHandle(
   telegramId: number,
@@ -55,7 +46,7 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
   const order = await getOrder(orderId);
   if (!order) return ctx.reply(dict.orderNotFound);
 
-  const { sellerId, buyerId } = getPartyIds(order);
+  const { sellerId, buyerId } = getParties(order);
   if (userId !== sellerId && userId !== buyerId)
     return ctx.reply(dict.unauthorizedAccess);
   if (!sellerId || !buyerId) return ctx.reply(dict.disputeNotAllowed);
@@ -65,13 +56,13 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
   const didTransition = await tryTransitionOrderStatus(
     orderId,
     DISPUTE_ELIGIBLE_STATUSES,
-    "DISPUTE",
+    OrderStatus.DISPUTE,
     { cancelRequestedBy: null },
   );
 
   if (!didTransition) {
     const fresh = await getOrder(orderId);
-    if (fresh?.status === "DISPUTE") return ctx.reply(dict.disputeAlreadyOpen);
+    if (fresh?.status === OrderStatus.DISPUTE) return ctx.reply(dict.disputeAlreadyOpen);
     return ctx.reply(dict.disputeNotAllowed);
   }
 
@@ -81,8 +72,8 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
 
   const buyer = await getUser(buyerId);
   const seller = await getUser(sellerId);
-  const buyerDict = dictionaries[(buyer?.language as Language) || "es"];
-  const sellerDict = dictionaries[(seller?.language as Language) || "es"];
+  const buyerDict = getUserDict(buyer?.language);
+  const sellerDict = getUserDict(seller?.language);
 
   await ctx.telegram.sendMessage(
     buyerId,
@@ -127,14 +118,14 @@ export async function takeDispute(ctx: CommandContext, orderId: string) {
   if (!isAdmin(adminId)) return ctx.reply(dict.adminOnlyAction);
 
   const order = await getOrder(orderId);
-  if (!order || order.status !== "DISPUTE")
+  if (!order || order.status !== OrderStatus.DISPUTE)
     return ctx.reply(dict.disputeNotFoundOrNotOpen);
 
   // Asignación atómica: solo si nadie más la tomó ya (evita doble-asignación
   // si dos admins ejecutan /takedispute casi simultáneamente).
   const assigned = await tryConditionalUpdate(
     orderId,
-    and(eq(orders.status, "DISPUTE"), isNull(orders.disputeAdminId)),
+    and(eq(orders.status, OrderStatus.DISPUTE), isNull(orders.disputeAdminId)),
     { disputeAdminId: adminId },
   );
 
@@ -147,13 +138,13 @@ export async function takeDispute(ctx: CommandContext, orderId: string) {
   const adminUsername = ctx.from.username
     ? `@${escapeMarkdown(ctx.from.username)}`
     : `Admin (ID: ${adminId})`;
-  const { sellerId, buyerId } = getPartyIds(order);
+  const { sellerId, buyerId } = getParties(order);
   if (!sellerId || !buyerId) return;
 
   const buyer = await getUser(buyerId);
   const seller = await getUser(sellerId);
-  const buyerDict = dictionaries[(buyer?.language as Language) || "es"];
-  const sellerDict = dictionaries[(seller?.language as Language) || "es"];
+  const buyerDict = getUserDict(buyer?.language);
+  const sellerDict = getUserDict(seller?.language);
 
   const codes = disputeCodesCache.get(orderId);
 
@@ -201,12 +192,12 @@ export async function settleCommand(ctx: CommandContext, orderId: string) {
   if (!isAdmin(adminId)) return ctx.reply(dict.adminOnlyAction);
 
   const order = await getOrder(orderId);
-  if (!order || order.status !== "DISPUTE")
+  if (!order || order.status !== OrderStatus.DISPUTE)
     return ctx.reply(dict.settleNotFoundOrNotInDispute);
   if (order.disputeAdminId !== adminId)
     return ctx.reply(dict.settleNotAssignedAdmin);
 
-  const { sellerId, buyerId } = getPartyIds(order);
+  const { sellerId, buyerId } = getParties(order);
   if (!sellerId || !buyerId)
     return ctx.reply(dict.settleNotFoundOrNotInDispute);
 
@@ -245,10 +236,8 @@ export async function resolveDispute(
   if (!order)
     return ctx.answerCbQuery(dict.orderNotFound, { show_alert: true });
 
-  if (order.status !== "DISPUTE" || order.disputeAdminId !== adminId) {
-    try {
-      await ctx.editMessageReplyMarkup(undefined);
-    } catch (e) {}
+  if (order.status !== OrderStatus.DISPUTE || order.disputeAdminId !== adminId) {
+    await safeRemoveMarkup(ctx);
     return ctx.answerCbQuery(
       order.disputeAdminId !== adminId
         ? dict.settleNotAssignedAdmin
@@ -257,24 +246,20 @@ export async function resolveDispute(
     );
   }
 
-  const toStatus = resolution === "BUYER" ? "RELEASABLE" : "REFUNDABLE";
+  const toStatus = resolution === "BUYER" ? OrderStatus.RELEASABLE : OrderStatus.REFUNDABLE;
 
   const resolved = await tryConditionalUpdate(
     orderId,
-    and(eq(orders.status, "DISPUTE"), eq(orders.disputeAdminId, adminId)),
+    and(eq(orders.status, OrderStatus.DISPUTE), eq(orders.disputeAdminId, adminId)),
     { status: toStatus, disputeResolution: resolution },
   );
 
   if (!resolved) {
-    try {
-      await ctx.editMessageReplyMarkup(undefined);
-    } catch (e) {}
+    await safeRemoveMarkup(ctx);
     return ctx.answerCbQuery(dict.settleStaleAction, { show_alert: true });
   }
 
-  try {
-    await ctx.editMessageReplyMarkup(undefined);
-  } catch (e) {}
+  await safeRemoveMarkup(ctx);
   await ctx.answerCbQuery();
 
   const resolutionLabel =
@@ -288,13 +273,13 @@ export async function resolveDispute(
     parse_mode: "Markdown",
   });
 
-  const { sellerId, buyerId } = getPartyIds(order);
+  const { sellerId, buyerId } = getParties(order);
   if (!sellerId || !buyerId) return;
 
   const buyer = await getUser(buyerId);
   const seller = await getUser(sellerId);
-  const buyerDict = dictionaries[(buyer?.language as Language) || "es"];
-  const sellerDict = dictionaries[(seller?.language as Language) || "es"];
+  const buyerDict = getUserDict(buyer?.language);
+  const sellerDict = getUserDict(seller?.language);
 
   if (resolution === "BUYER") {
     await ctx.telegram.sendMessage(

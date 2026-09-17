@@ -304,6 +304,10 @@ export default {
   errorProcessingTx: (err: string) => `❌ *Network error:*\n\`${err}\``,
 
   // ─────────────────────────── Fiat & Release ───────────────────────────
+  selectReleasableOrder: "👇 Select the order from which you want to release the Bitcoin funds:",
+  noReleasableOrdersFound: "📭 You have no pending orders to release.\n\nYou must wait for the buyer to make the payment and confirm it using `/fiatsent`.",
+  selectOrderToMarkAsPaid: "👇 Select the order you want to mark as paid:",
+  noActiveOrdersFound: "📭 You have no active orders pending payment.\n\nYou must wait for the seller to deposit the funds into the vault or take a new offer.",
   fiatSentToBuyer: (orderId: string) =>
     `✅ You have marked order \`${orderId}\` as paid.\n\n` +
     `The seller has been notified. Please wait for them to confirm receipt in their account and release the funds.`,
@@ -315,6 +319,12 @@ export default {
     `2. Confirm the amount is correct.\n` +
     `3. If everything is fine, release the Bitcoins by running:\n\n` +
     `\`/release ${orderId}\``,
+  askReleaseConfirmation: (buyerName: string) =>
+    `⚠️ *Release Confirmation*\n\n` +
+    `You are about to release the Bitcoin funds from the escrow vault to @**${buyerName}**.\n\n` +
+    `🏦 *Before proceeding, it is strictly necessary that you log into your bank account or wallet and verify for yourself that the payment has been successfully credited.*\n\n` +
+    `_Please remember that once released, Bitcoin funds cannot be recovered under any circumstances._\n\n` +
+    `Do you wish to confirm the final release of the funds?`,
   releaseSuccessSeller: (orderId: string) =>
     `✅ You have authorized the release of order \`${orderId}\`.\n\n` +
     `The buyer has been notified to sign and claim their Bitcoin. Thank you for using the service!`,
@@ -331,6 +341,8 @@ export default {
     `⭐ You have rated your counterpart with ${stars} stars.`,
 
   // ─────────────────────────── Claim & Refund ───────────────────────────
+  selectClaimableOrder: "👇 Select the order from which you want to claim the funds:",
+  noClaimableOrdersFound: "📭 You have no orders ready to be claimed or refunded.",
   askClaimPassword: (
     minerFee: number,
     finalAmount: number,

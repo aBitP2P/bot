@@ -7,8 +7,10 @@ import {
 } from "../core/bitcoin/index.js";
 import { decryptData } from "../utils/crypto.js";
 import { getUser } from "../db/users.js";
-import { dictionaries, type Language } from "../locales/index.js";
+import { getUserDict } from "../locales/index.js";
 import { OrderStatus } from "../shared/constants.js";
+import { getParties } from "../utils/order.js";
+import { safeDeleteMsg } from "../utils/telegram.js";
 
 export async function claimPasswordStep(ctx: CommandContext) {
   const text = ctx.message.text;
@@ -18,10 +20,7 @@ export async function claimPasswordStep(ctx: CommandContext) {
 
   ctx.session.step = "IDLE";
   ctx.session.claimOrderId = undefined;
-  try {
-    await ctx.deleteMessage();
-  } catch (e) {}
-
+  await safeDeleteMsg(ctx);
   const order = await getOrder(orderId!);
   if (!order) return ctx.reply(ctx.dict.orderNotFound);
 
@@ -31,10 +30,8 @@ export async function claimPasswordStep(ctx: CommandContext) {
   )
     return ctx.reply(ctx.dict.invalidOrderStatus);
 
-  const isRefund = order.status === "REFUNDABLE";
-  const isCreatorSelling = order.type === "SELL";
-  const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
-  const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
+  const isRefund = order.status === OrderStatus.REFUNDABLE;
+  const { sellerId, buyerId } = getParties(order)
 
   if (isRefund && userId !== sellerId) return ctx.reply(ctx.dict.onlySeller);
   if (!isRefund && userId !== buyerId) return ctx.reply(ctx.dict.onlyBuyer);
@@ -53,8 +50,8 @@ export async function claimPasswordStep(ctx: CommandContext) {
   });
 
   try {
-    const targetStatus = isRefund ? "REFUNDED" : "COMPLETED";
-    const currentValidStatus = isRefund ? "REFUNDABLE" : "RELEASABLE";
+    const targetStatus = isRefund ? OrderStatus.REFUNDED : OrderStatus.COMPLETED;
+    const currentValidStatus = isRefund ? OrderStatus.REFUNDABLE : OrderStatus.RELEASABLE;
     let txid = "";
     try {
       txid = isRefund
@@ -89,7 +86,7 @@ export async function claimPasswordStep(ctx: CommandContext) {
 
     if (isRefund && buyerId) {
       const buyer = await getUser(buyerId);
-      const buyerDict = dictionaries[(buyer?.language as Language) || "es"];
+      const buyerDict = getUserDict(buyer?.language);
       await ctx.telegram.sendMessage(
         buyerId,
         buyerDict.refundCompletedNotification(order.id),

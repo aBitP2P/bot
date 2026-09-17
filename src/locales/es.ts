@@ -307,6 +307,10 @@ export default {
   errorProcessingTx: (err: string) => `❌ *Error en la red:*\n\`${err}\``,
 
   // ─────────────────────────── Fiat & Release ───────────────────────────
+  selectReleasableOrder: "👇 Selecciona la orden de la cual deseas liberar los fondos en Bitcoin:",
+  noReleasableOrdersFound: "📭 No tienes órdenes pendientes por liberar.\n\nDebes esperar a que el comprador realice el pago y lo confirme usando `/fiatsent`.",
+  selectOrderToMarkAsPaid: "👇 Selecciona la orden que deseas marcar como pagada:",
+  noActiveOrdersFound: "📭 No tienes órdenes activas pendientes de pago.\n\nDebes esperar a que el vendedor deposite los fondos en la bóveda o tomar una nueva oferta.",
   fiatSentToBuyer: (orderId: string) =>
     `✅ Has marcado la orden \`${orderId}\` como pagada.\n\n` +
     `El vendedor ha sido notificado. Por favor espera a que confirme la recepción en su cuenta y libere los fondos.`,
@@ -318,6 +322,12 @@ export default {
     `2. Confirma que el monto es correcto.\n` +
     `3. Si todo está bien, libera los Bitcoins ejecutando:\n\n` +
     `\`/release ${orderId}\``,
+  askReleaseConfirmation: (buyerName: string) =>
+    `⚠️ *Confirmación de Liberación*\n\n` +
+    `Estás a punto de liberar los fondos en Bitcoin de la bóveda a favor de @**${buyerName}**.\n\n` +
+    `🏦 *Antes de continuar, es estrictamente necesario que inicies sesión en tu cuenta bancaria o billetera y verifiques por ti mismo que el pago ha sido acreditado correctamente.*\n\n` +
+    `_Recuerda que una vez liberados, los fondos en Bitcoin no podrán ser recuperados bajo ninguna circunstancia._\n\n` +
+    `¿Deseas confirmar la liberación definitiva de los fondos?`,
   releaseSuccessSeller: (orderId: string) =>
     `✅ Has autorizado la liberación de la orden \`${orderId}\`.\n\n` +
     `El comprador ha sido notificado para que firme y reclame su Bitcoin. ¡Gracias por usar el servicio!`,
@@ -338,6 +348,8 @@ export default {
     `⭐ Has calificado a tu contraparte con ${stars} estrellas.`,
 
   // ─────────────────────────── Claim & Refund ───────────────────────────
+  selectClaimableOrder: "👇 Selecciona la orden de la cual deseas reclamar los fondos:",
+  noClaimableOrdersFound: "📭 No tienes órdenes listas para retirar o reembolsar.",
   askClaimPassword: (
     minerFee: number,
     finalAmount: number,

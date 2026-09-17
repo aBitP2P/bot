@@ -15,7 +15,3 @@ const ADMIN_IDS = parseAdminIds();
 export function isAdmin(userId: number): boolean {
   return ADMIN_IDS.has(userId);
 }
-
-export function getAdminIds(): number[] {
-  return Array.from(ADMIN_IDS);
-}

@@ -4,7 +4,6 @@ import { t, type Language, dictionaries } from "../locales/index.js";
 import { db } from "../db/index.js";
 import { orders } from "../db/schema.js";
 import { eq } from "drizzle-orm";
-import crypto from "node:crypto";
 import { getUser } from "../db/users.js";
 import { createOrder, getOrdersCreatedBy } from "../db/orders.js";
 import {
@@ -13,6 +12,8 @@ import {
 } from "../shared/keyboards.js";
 import { getMinFiatAmount, getRateInfoFor, ratesCache } from "../utils/price.js";
 import { escapeMarkdown } from "../utils/format.js";
+import { generateOrderId } from "../utils/crypto.js";
+import { safeDeleteMsg, safeRemoveMarkup } from "../utils/telegram.js";
 
 const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -101,11 +102,7 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
   const message = ctx.message;
   const text = message && "text" in message ? message.text.trim() : "";
 
-  if (message) {
-    try {
-      await ctx.deleteMessage(message.message_id);
-    } catch (e) {}
-  }
+  await safeDeleteMsg(ctx);
 
   const chatId = ctx.chat?.id;
   const previewId = ctx.session.previewMessageId;
@@ -246,11 +243,7 @@ export async function handleWizardAction(ctx: BotContext) {
 
     if (satsAmount < 60000) {
       const minFiatRequired = (60000 / 100_000_000) * appliedRate;
-      try {
-        await ctx.editMessageReplyMarkup(undefined);
-      } catch (e) {
-        console.error("Error al quitar botones del preview:", e);
-      }
+      await safeRemoveMarkup(ctx);
       await ctx.reply(
         ctx.dict.invalidAmountAfterMargin({
           margin,
@@ -320,8 +313,7 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
     type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy;
   const hashtag = `#${type}${fiat}`;
 
-  const rawHex = crypto.randomBytes(6).toString("hex").slice(0, 12);
-  const orderId = rawHex.match(/.{1,6}/g)!.join("-");
+  const orderId = generateOrderId();
 
   await createOrder({
     id: orderId,

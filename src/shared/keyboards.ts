@@ -6,11 +6,11 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   );
 }
 
-export function buildCancelOrderKeyboard(userOrders: any[]) {
+export function buildOrderSelectKeyboard(userOrders: any[], prefix: string) {
   const buttons = userOrders.map((o) =>
     Markup.button.callback(
-      `${o.id.slice(0, 2)}..${o.id.slice(-2)} - ${o.type} - ${o.fiatCode}`,
-      `cancelCommand_${o.id}`,
+      `${o.id.slice(0, 2)}..${o.id.slice(-2)} - ${o.type} - ${o.fiatAmountLocked ? o.fiatAmountLocked +  " - " : ""}${o.fiatCode}`,
+      `${prefix}_${o.id}`,
     ),
   );
   return Markup.inlineKeyboard(chunkArray(buttons, 3));

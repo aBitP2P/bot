@@ -7,7 +7,7 @@ import {
   handleWizardInput,
   handleWizardAction,
 } from "./wizards/orderWizard.js";
-import { dictionaries, t, type Language } from "./locales/index.js";
+import { getUserDict } from "./locales/index.js";
 import { getUser } from "./db/users.js";
 import {
   handleMakerConfirm,
@@ -24,7 +24,10 @@ import { db } from "./db/index.js";
 import { eq } from "drizzle-orm";
 import { isValidAddress } from "./core/bitcoin/index.js";
 import { initializeEscrow } from "./handlers/escrowHandler.js";
-import { startEscrowMonitor, startOrderTimeoutsMonitor } from "./services/monitor.js";
+import {
+  startEscrowMonitor,
+  startOrderTimeoutsMonitor,
+} from "./services/monitor.js";
 import { userMiddleware } from "./middlewares/auth.js";
 import {
   claimCommand,
@@ -48,8 +51,12 @@ import {
 import { resolveDispute } from "./handlers/disputeHandler.js";
 import { handleOrderCancelFromCommand } from "./commands/cancel.js";
 import { handleRating } from "./handlers/ratingHandler.js";
-import { Strings } from "./shared/constants.js";
+import { OrderStatus, Strings } from "./shared/constants.js";
 import { handleSetLangAction } from "./commands/setlang.js";
+import { markAsFiatSent } from "./commands/fiatsent.js";
+import { askReleaseConfirmation, doFundsRelease } from "./commands/release.js";
+import { initiateClaim } from "./commands/claim.js";
+import { safeRemoveMarkup } from "./utils/telegram.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -58,7 +65,11 @@ bot.use(
 );
 bot.use(userMiddleware);
 bot.use((ctx, next) => {
-  if (ctx.message && 'text' in ctx.message && ctx.message.text.startsWith('/')) {
+  if (
+    ctx.message &&
+    "text" in ctx.message &&
+    ctx.message.text.startsWith("/")
+  ) {
     ctx.session = { step: "IDLE", draft: {} };
   }
   return next();
@@ -119,16 +130,46 @@ bot.on("callback_query", async (ctx, next) => {
 
   if (data.startsWith("cancelCommand_")) {
     const orderId = data.replace("cancelCommand_", "");
-    try {
-      await ctx.editMessageReplyMarkup(undefined);
-    } catch (e) {}
+    await safeRemoveMarkup(ctx);
     return handleOrderCancelFromCommand(ctx, orderId);
   }
 
+  if (data.startsWith("fiatsentCommand_")) {
+    const orderId = data.replace("fiatsentCommand_", "");
+    await markAsFiatSent(ctx, orderId);
+  }
+
+  if (data.startsWith("releaseCommand_")) {
+    const orderId = data.replace("releaseCommand_", "");
+    await askReleaseConfirmation(ctx, orderId);
+  }
+
+  if (data.startsWith("confirmRelease")) {
+    const orderId = data.replace("confirmRelease_", "");
+    const order = await getOrder(orderId);
+    if (!order)
+      return ctx.answerCbQuery(ctx.dict.orderNotFound, { show_alert: true });
+    await doFundsRelease(ctx, order);
+  }
+
+  if (data.startsWith("cancelRelease")) {
+    return await ctx.editMessageText(ctx.dict.cancelled);
+  }
+
+  if (data.startsWith("claimCommand_")) {
+    const orderId = data.replace("claimCommand_", "");
+    return initiateClaim(ctx, orderId);
+  }
+
   if (data.startsWith("setfee_default")) {
-    await db.update(users).set({ customFee: null }).where(eq(users.telegramId, ctx.from.id));
+    await db
+      .update(users)
+      .set({ customFee: null })
+      .where(eq(users.telegramId, ctx.from.id));
     await ctx.answerCbQuery();
-    await ctx.editMessageText(ctx.dict.feeResetSuccess, { parse_mode: "Markdown" })
+    await ctx.editMessageText(ctx.dict.feeResetSuccess, {
+      parse_mode: "Markdown",
+    });
   }
 
   if (data.startsWith("maker_deny_")) {
@@ -138,13 +179,11 @@ bot.on("callback_query", async (ctx, next) => {
 
     const didCancel = await tryTransitionOrderStatus(
       orderId,
-      ["WAITING_MAKER_CONFIRMATION"],
-      "CANCELLED",
+      [OrderStatus.WAITING_MAKER_CONFIRMATION],
+      OrderStatus.CANCELLED,
     );
     if (!didCancel) {
-      try {
-        await ctx.editMessageReplyMarkup(undefined);
-      } catch (e) {}
+      await safeRemoveMarkup(ctx);
       return ctx.answerCbQuery(ctx.dict.cancelNotAllowed, { show_alert: true });
     }
 
@@ -152,7 +191,7 @@ bot.on("callback_query", async (ctx, next) => {
 
     if (order.takerId) {
       const taker = await getUser(order.takerId);
-      const takerDict = dictionaries[(taker?.language as Language) || "es"];
+      const takerDict = getUserDict(taker?.language);
       await ctx.telegram.sendMessage(
         order.takerId,
         takerDict.counterpartyCanceledDeleted(orderId),
@@ -173,7 +212,7 @@ bot.on("callback_query", async (ctx, next) => {
     return await handleRating(ctx, {
       orderId,
       stars,
-      raterId
+      raterId,
     });
   }
 
@@ -191,7 +230,7 @@ bot.on("callback_query", async (ctx, next) => {
 });
 
 bot.start(async (ctx) => {
-  const text = 
+  const text =
     `🤖 *¡Bienvenido a aBitP2P! / Welcome to aBitP2P!*\n\n` +
     `🇪🇸 *ESPAÑOL*\n` +
     `⚠️ *Paso 1:* Usa /setpass para configurar tu contraseña y activar tu cuenta.\n` +
@@ -234,7 +273,11 @@ bot.on(message("text"), async (ctx, next) => {
   const orderToSetAmount = ctx.session.awaitingAmountForOrder;
   if (orderToSetAmount) {
     const order = await getOrder(orderToSetAmount);
-    if (!order || order.status !== "WAITING_TAKER_CONFIRMATION" || order.takerId !== ctx.from.id) {
+    if (
+      !order ||
+      order.status !== OrderStatus.WAITING_TAKER_CONFIRMATION ||
+      order.takerId !== ctx.from.id
+    ) {
       ctx.session.awaitingAmountForOrder = undefined;
       return next();
     }
@@ -270,7 +313,11 @@ bot.on(message("text"), async (ctx, next) => {
     const address = ctx.message.text.trim();
     const order = await getOrder(orderId);
 
-    if (!order || (order.status !== "WAITING_TAKER_CONFIRMATION" && order.status !== "WAITING_MAKER_CONFIRMATION")) {
+    if (
+      !order ||
+      (order.status !== OrderStatus.WAITING_TAKER_CONFIRMATION &&
+        order.status !== OrderStatus.WAITING_MAKER_CONFIRMATION)
+    ) {
       ctx.session.awaitingAddressForOrder = undefined;
       return next();
     }
@@ -289,14 +336,14 @@ bot.on(message("text"), async (ctx, next) => {
 
     const dict = ctx.dict;
 
-    if (order.status === "WAITING_TAKER_CONFIRMATION") {
+    if (order.status === OrderStatus.WAITING_TAKER_CONFIRMATION) {
       await ctx.reply(dict.waitMaker, { parse_mode: "Markdown" });
       await notifyMakerForConfirmation(ctx, order);
-    } else if (order.status === "WAITING_MAKER_CONFIRMATION") {
+    } else if (order.status === OrderStatus.WAITING_MAKER_CONFIRMATION) {
       await ctx.reply(dict.waitTaker, { parse_mode: "Markdown" });
       await db
         .update(orders)
-        .set({ status: "WAITING_ESCROW" })
+        .set({ status: OrderStatus.WAITING_ESCROW })
         .where(eq(orders.id, orderId));
 
       await initializeEscrow(ctx, order.id);

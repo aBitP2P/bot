@@ -3,28 +3,27 @@ import { db } from "../db/index.js";
 import { getOrder } from "../db/orders.js";
 import { orders } from "../db/schema.js";
 import { getUser } from "../db/users.js";
-import { dictionaries, type Language } from "../locales/index.js";
+import { getUserDict } from "../locales/index.js";
 import type { BotContext } from "../types.js";
 import { generateEscrow } from "../core/bitcoin/index.js";
 import { getRateInfoFor } from "../utils/price.js";
 import QRCode from "qrcode";
+import { getParties } from "../utils/order.js";
 
 export async function initializeEscrow(ctx: BotContext, orderId: string) {
   const order = await getOrder(orderId);
   if (!order) return;
 
-  const isCreatorSelling = order.type === "SELL";
-  const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
-  const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
+  const { buyerId, sellerId } = getParties(order);
 
   const buyer = await getUser(buyerId!);
   const seller = await getUser(sellerId!);
-  const sellerLang = (seller?.language as Language) || "es";
+  const dictSeller = getUserDict(seller?.language);
   const buyerPubkey = buyer?.pubkey;
   const sellerPubkey = seller?.pubkey;
 
   if (!buyerPubkey || !sellerPubkey) {
-    return ctx.reply(dictionaries[sellerLang].missingPubkeys);
+    return ctx.reply(dictSeller.missingPubkeys);
   }
 
   const { address, witnessScript } = generateEscrow(
@@ -71,7 +70,7 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
     sellerId!,
     { source: qrBuffer },
     {
-      caption: dictionaries[sellerLang].askSellerEscrow(satsToDeposit, address),
+      caption: dictSeller.askSellerEscrow(satsToDeposit, address),
       parse_mode: "Markdown",
     },
   );

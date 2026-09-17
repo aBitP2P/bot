@@ -37,13 +37,8 @@ export function t(lang: Language, key: TranslationKey): string {
   return value;
 }
 
-export function getLocalesList() {
-  let str = "";
-  for (const locale of Object.keys(LocaleData)) {
-    let data = LocaleData[locale as keyof typeof LocaleData];
-    str += `${data.emoji} \`${locale}\` - ${data.label}\n`
-  }
-  return str;
+export function getUserDict(languageCode?: string | null) {
+  return dictionaries[(languageCode as Language) || "es"];
 }
 
 export { dictionaries };

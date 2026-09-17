@@ -5,31 +5,45 @@ import {
   type BotContext,
   type CallbackContext,
   type CommandContext,
+  type OrderRecord,
 } from "../types.js";
 import { getUser } from "../db/users.js";
-import { type Language, dictionaries, t } from "../locales/index.js";
+import {
+  type Language,
+  getUserDict,
+  t,
+} from "../locales/index.js";
 import { Markup, Telegraf } from "telegraf";
 import { initializeEscrow } from "./escrowHandler.js";
-import { getOrder, getUserOrders, tryTransitionOrderStatus } from "../db/orders.js";
+import {
+  getOrder,
+  getUserOrders,
+  tryTransitionOrderStatus,
+} from "../db/orders.js";
 import {
   buildMakerConfirmKeyboard,
   buildTakerConfirmKeyboard,
 } from "../shared/keyboards.js";
 import { getRateInfoFor } from "../utils/price.js";
 import { escapeMarkdown } from "../utils/format.js";
+import { safeDeleteMsg } from "../utils/telegram.js";
+import { OrderStatus } from "../shared/constants.js";
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
-export async function republishOrderSilently(bot: Telegraf<BotContext>, orderId: string) {
+export async function republishOrderSilently(
+  bot: Telegraf<BotContext>,
+  orderId: string,
+) {
   const didReset = await tryTransitionOrderStatus(
     orderId,
-    ["WAITING_TAKER_CONFIRMATION"],
-    "PENDING",
+    [OrderStatus.WAITING_TAKER_CONFIRMATION],
+    OrderStatus.PENDING,
     {
       takerId: null,
       buyerAddress: null,
       fiatAmountLocked: null,
       cancelRequestedBy: null,
-      createdAt: Date.now() // Reinicia las 24h
+      createdAt: Date.now(), // Reinicia las 24h
     },
   );
 
@@ -37,11 +51,11 @@ export async function republishOrderSilently(bot: Telegraf<BotContext>, orderId:
 
   const order = await getOrder(orderId);
   if (!order) return false;
-  
+
   const orderCreator = await getUser(order.creatorId);
   if (!orderCreator) return false;
-  
-  const dict = dictionaries[(orderCreator.language as Language) || "es"];
+
+  const dict = getUserDict(orderCreator.language);
 
   const sentChannelMsg = await bot.telegram.sendMessage(
     PUBLIC_CHANNEL_ID,
@@ -49,7 +63,8 @@ export async function republishOrderSilently(bot: Telegraf<BotContext>, orderId:
       action: order.type === "SELL" ? dict.actionSell : dict.actionBuy,
       amountFiat: order.amountFiat,
       fiat: order.fiatCode,
-      payDirection: order.type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy,
+      payDirection:
+        order.type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy,
       method: escapeMarkdown(order.paymentMethod),
       daysUsing: Math.floor((Date.now() - orderCreator.createdAt) / 86400000),
       hashtag: `#${order.type}${order.fiatCode}`,
@@ -76,19 +91,19 @@ export async function republishOrderSilently(bot: Telegraf<BotContext>, orderId:
     .update(orders)
     .set({ channelMessageId: sentChannelMsg.message_id })
     .where(eq(orders.id, orderId));
-    
+
   return true;
 }
 
 export async function handleOrderCancelledRepublish(
   ctx: CallbackContext | CommandContext | BotContext,
   orderId: string,
-  customMessage?: string
+  customMessage?: string,
 ) {
   const didReset = await tryTransitionOrderStatus(
     orderId,
-    ["WAITING_TAKER_CONFIRMATION", "WAITING_MAKER_CONFIRMATION"],
-    "PENDING",
+    [OrderStatus.WAITING_TAKER_CONFIRMATION, OrderStatus.WAITING_MAKER_CONFIRMATION],
+    OrderStatus.PENDING,
     {
       takerId: null,
       buyerAddress: null,
@@ -112,7 +127,7 @@ export async function handleOrderCancelledRepublish(
 
   const order = await getOrder(orderId);
   const orderCreator = (await getUser(order!.creatorId))!;
-  const dict = dictionaries[(orderCreator.language as Language) || "es"];
+  const dict = getUserDict(orderCreator.language);
 
   const sentChannelMsg = await ctx.telegram.sendMessage(
     PUBLIC_CHANNEL_ID,
@@ -170,9 +185,9 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
     return ctx.answerCbQuery(dict.cantTakeOwnOrder, { show_alert: true });
 
   const activeOrders = await getUserOrders(takerId);
-  const isBusy = activeOrders.some(o => o.takerId === takerId);
-  if (isBusy) return ctx.answerCbQuery(dict.alreadyHaveActiveOrder, { show_alert: true });
-  
+  const isBusy = activeOrders.some((o) => o.takerId === takerId);
+  if (isBusy)
+    return ctx.answerCbQuery(dict.alreadyHaveActiveOrder, { show_alert: true });
 
   // CAS: si dos usuarios tocan "Tomar Orden" casi simultáneamente sobre la
   // misma orden PENDING, solo uno de los dos UPDATE afecta realmente la fila;
@@ -180,8 +195,8 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
   // takerId pise silenciosamente al primero.
   const didTake = await tryTransitionOrderStatus(
     orderId,
-    ["PENDING"],
-    "WAITING_TAKER_CONFIRMATION",
+    [OrderStatus.PENDING],
+    OrderStatus.WAITING_TAKER_CONFIRMATION,
     { takerId },
   );
   if (!didTake) return ctx.answerCbQuery(dict.orderTaken, { show_alert: true });
@@ -191,9 +206,7 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
       ? t(ctx.user.language as Language, "actionBuy")
       : t(ctx.user.language as Language, "actionSell");
 
-  try {
-    await ctx.deleteMessage();
-  } catch (e) {}
+  await safeDeleteMsg(ctx);
 
   await ctx.telegram.sendMessage(
     takerId,
@@ -216,12 +229,11 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
   const takerId = ctx.from?.id;
   const order = await getOrder(orderId);
   if (!order || !takerId) return;
-  if (order.status !== "WAITING_TAKER_CONFIRMATION") return;
+  if (order.status !== OrderStatus.WAITING_TAKER_CONFIRMATION) return;
   if (order.takerId !== takerId) {
     return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
   }
-  const dict =
-    dictionaries[((await getUser(takerId))?.language as Language) || "es"];
+  const dict = getUserDict((await getUser(takerId))?.language);
   await ctx.editMessageReplyMarkup(undefined);
 
   if (order.amountFiat.includes("-")) {
@@ -243,7 +255,10 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
   });
 }
 
-export async function proceedAfterTakerAmount(ctx: BotContext, order: any) {
+export async function proceedAfterTakerAmount(
+  ctx: BotContext,
+  order: OrderRecord,
+) {
   const dict = ctx.dict;
   const isTakerBuyer = order.type === "SELL";
 
@@ -256,8 +271,12 @@ export async function proceedAfterTakerAmount(ctx: BotContext, order: any) {
     });
     if (estimatedSats === 0) {
       ctx.session.awaitingAddressForOrder = undefined;
-      return handleOrderCancelledRepublish(ctx, order.id, dict.priceApiErrorRepublish);
-    } 
+      return handleOrderCancelledRepublish(
+        ctx,
+        order.id,
+        dict.priceApiErrorRepublish,
+      );
+    }
     await ctx.reply(dict.askBuyerAddress(estimatedSats), {
       parse_mode: "Markdown",
     });
@@ -299,13 +318,10 @@ async function calculateSatsBeforeFees({
 
 export async function notifyMakerForConfirmation(
   ctx: BotContext,
-  order: typeof orders.$inferSelect,
+  order: OrderRecord,
 ) {
   const taker = await getUser(order.takerId!);
-  const dict =
-    dictionaries[
-      ((await getUser(order.creatorId))?.language as Language) || "es"
-    ];
+  const dict = getUserDict((await getUser(order.creatorId))?.language);
 
   const daysUsing = taker
     ? Math.floor((Date.now() - taker.createdAt) / 86400000)
@@ -314,7 +330,7 @@ export async function notifyMakerForConfirmation(
 
   await db
     .update(orders)
-    .set({ status: "WAITING_MAKER_CONFIRMATION" })
+    .set({ status: OrderStatus.WAITING_MAKER_CONFIRMATION })
     .where(eq(orders.id, order.id));
 
   const displayAmount = order.fiatAmountLocked
@@ -348,7 +364,7 @@ export async function handleMakerConfirm(
   const makerId = ctx.from.id;
   const order = await getOrder(orderId);
   if (!order || !makerId) return;
-  if (order.status !== "WAITING_MAKER_CONFIRMATION") return;
+  if (order.status !== OrderStatus.WAITING_MAKER_CONFIRMATION) return;
   if (order.creatorId !== makerId) {
     return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
   }
@@ -368,11 +384,19 @@ export async function handleMakerConfirm(
 
     if (estimatedSats === 0) {
       ctx.session.awaitingAddressForOrder = undefined;
-      
-      const takerDict = dictionaries[((await getUser(order.takerId!))?.language as Language) || "es"];
-      await ctx.telegram.sendMessage(order.takerId!, takerDict.priceApiErrorRepublish, { parse_mode: "Markdown" });
 
-      return handleOrderCancelledRepublish(ctx, orderId, dict.priceApiErrorRepublish);
+      const takerDict = getUserDict((await getUser(order.takerId!))?.language);
+      await ctx.telegram.sendMessage(
+        order.takerId!,
+        takerDict.priceApiErrorRepublish,
+        { parse_mode: "Markdown" },
+      );
+
+      return handleOrderCancelledRepublish(
+        ctx,
+        orderId,
+        dict.priceApiErrorRepublish,
+      );
     }
 
     await ctx.reply(dict.askBuyerAddress(estimatedSats), {
@@ -382,12 +406,12 @@ export async function handleMakerConfirm(
     let taker = await getUser(order.takerId!);
     await ctx.telegram.sendMessage(
       order.takerId!,
-      dictionaries[taker!.language as Language]!.acceptedNowWaitingEscrow,
+      getUserDict(taker?.language).acceptedNowWaitingEscrow,
       { parse_mode: "Markdown" },
     );
     await db
       .update(orders)
-      .set({ status: "WAITING_ESCROW" })
+      .set({ status: OrderStatus.WAITING_ESCROW })
       .where(eq(orders.id, orderId));
 
     await initializeEscrow(ctx, orderId);

@@ -1,4 +1,5 @@
 import { mysqlTable, varchar, text, int, bigint, double, index, uniqueIndex } from "drizzle-orm/mysql-core";
+import { OrderStatus } from "../shared/constants.js";
 
 export const users = mysqlTable("users", {
   telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
@@ -22,7 +23,7 @@ export const orders = mysqlTable("orders", {
   type: varchar("type", { length: 10 }).notNull(),
   creatorId: bigint("creator_id", { mode: "number" }).notNull(),
   takerId: bigint("taker_id", { mode: "number" }),
-  status: varchar("status", { length: 64 }).notNull().default("PENDING"),
+  status: varchar("status", { length: 64 }).notNull().default(OrderStatus.PENDING),
 
   amountFiat: varchar("amount_fiat", { length: 64 }).notNull(),
   fiatCode: varchar("fiat_code", { length: 10 }).notNull(),

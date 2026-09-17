@@ -1,17 +1,20 @@
 import { and, eq, lte, or } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { orders, users } from "../db/schema.js";
+import { orders } from "../db/schema.js";
 import {
   checkEscrowFunding,
   getMempoolApiPath,
 } from "../core/bitcoin/index.js";
-import { dictionaries, type Language } from "../locales/index.js";
+import { getUserDict } from "../locales/index.js";
 import { Telegraf } from "telegraf";
 import { type BotContext } from "../types.js";
 import { getUser } from "../db/users.js";
 import { tryTransitionOrderStatus } from "../db/orders.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { republishOrderSilently } from "../handlers/orderHandler.js";
+import { getParties } from "../utils/order.js";
+import { safeNotify } from "../utils/telegram.js";
+import { OrderStatus } from "../shared/constants.js";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID;
@@ -25,8 +28,8 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
       .from(orders)
       .where(
         or(
-          eq(orders.status, "WAITING_ESCROW"),
-          eq(orders.status, "UNCONFIRMED"),
+          eq(orders.status, OrderStatus.WAITING_ESCROW),
+          eq(orders.status, OrderStatus.UNCONFIRMED),
         ),
       );
 
@@ -41,7 +44,7 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
     }
 
     for (const order of pendingOrders) {
-      await new Promise(res => setTimeout(res, 500));
+      await new Promise((res) => setTimeout(res, 500));
       if (!order.escrowAddress) continue;
 
       const fundingInfo = await checkEscrowFunding(
@@ -57,21 +60,19 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
       const expectedSats = order.amountSats + sellerFeeSats;
       if (fundingInfo.totalFundedSats < expectedSats) continue;
 
-      const isCreatorSelling = order.type === "SELL";
-      const sellerId = isCreatorSelling ? order.creatorId : order.takerId;
-      const buyerId = isCreatorSelling ? order.takerId : order.creatorId;
+      const { buyerId, sellerId } = getParties(order);
 
-      if (order.status === "WAITING_ESCROW" && !fundingInfo.confirmed) {
+      if (order.status === OrderStatus.WAITING_ESCROW && !fundingInfo.confirmed) {
         await db
           .update(orders)
-          .set({ status: "UNCONFIRMED", fundingTxid: fundingInfo.txid })
+          .set({ status: OrderStatus.UNCONFIRMED, fundingTxid: fundingInfo.txid })
           .where(eq(orders.id, order.id));
 
         const seller = await getUser(sellerId!);
         const buyer = await getUser(buyerId!);
 
-        const dictSeller = dictionaries[(seller?.language as Language) || "es"];
-        const dictBuyer = dictionaries[(buyer?.language as Language) || "es"];
+        const dictSeller = getUserDict(seller?.language);
+        const dictBuyer = getUserDict(buyer?.language);
         await bot.telegram.sendMessage(
           sellerId!,
           dictSeller.escrowUnconfirmed(fundingInfo.txid),
@@ -83,50 +84,44 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
           { parse_mode: "Markdown" },
         );
       }
-      if (fundingInfo.confirmed && order.status !== "ACTIVE") {
+      if (fundingInfo.confirmed && order.status !== OrderStatus.ACTIVE) {
         const didTransition = await tryTransitionOrderStatus(
           order.id,
-          ["WAITING_ESCROW", "UNCONFIRMED"],
-          "ACTIVE",
+          [OrderStatus.WAITING_ESCROW, OrderStatus.UNCONFIRMED],
+          OrderStatus.ACTIVE,
           { fundingTxid: fundingInfo.txid },
         );
 
         if (!didTransition) continue;
 
-        const seller = await getUser(sellerId!)
+        const seller = await getUser(sellerId!);
         const buyer = await getUser(buyerId!);
-
-        const dictSeller = dictionaries[(seller?.language as Language) || "es"];
-        const dictBuyer = dictionaries[(buyer?.language as Language) || "es"];
-
         const sellerContact = "@" + escapeMarkdown(seller!.username);
         const buyerContact = "@" + escapeMarkdown(buyer!.username);
-        await bot.telegram.sendMessage(
-          sellerId!,
-          dictSeller.escrowConfirmedSeller(buyerContact, order.id),
-          { parse_mode: "Markdown" },
-        );
 
-        await bot.telegram.sendMessage(
-          buyerId!,
-          dictBuyer.escrowConfirmedBuyer(sellerContact, order.id),
-          { parse_mode: "Markdown" },
+        await safeNotify(bot, seller, (dict) =>
+          dict.escrowConfirmedSeller(buyerContact, order.id),
+        );
+        await safeNotify(bot, buyer, (dict) =>
+          dict.escrowConfirmedBuyer(sellerContact, order.id),
         );
 
         const excessSats = fundingInfo.totalFundedSats - expectedSats;
-        if (excessSats > 546) { 
+        if (excessSats > 546) {
           const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
           if (ADMIN_GROUP_ID) {
-            const sellerUsername = seller?.username ? escapeMarkdown(seller.username) : `ID: ${sellerId}`;
+            const sellerUsername = seller?.username
+              ? escapeMarkdown(seller.username)
+              : `ID: ${sellerId}`;
             await bot.telegram.sendMessage(
               ADMIN_GROUP_ID,
               `⚠️ *ALERTA DE SOBRE-FONDEO*\n\n` +
-              `El vendedor @${sellerUsername} ha enviado más fondos de los solicitados en la orden \`${order.id}\`.\n\n` +
-              `Esperado: \`${expectedSats}\` sats\n` +
-              `Recibido: \`${fundingInfo.totalFundedSats}\` sats\n` +
-              `Exceso a recuperar: \`${excessSats}\` sats\n\n` +
-              `_Nota: El exceso será enviado a la billetera de comisiones del bot al finalizar la orden (ejecución de /release). Contacte al usuario para coordinar el reembolso._`,
-              { parse_mode: "Markdown" }
+                `El vendedor @${sellerUsername} ha enviado más fondos de los solicitados en la orden \`${order.id}\`.\n\n` +
+                `Esperado: \`${expectedSats}\` sats\n` +
+                `Recibido: \`${fundingInfo.totalFundedSats}\` sats\n` +
+                `Exceso a recuperar: \`${excessSats}\` sats\n\n` +
+                `_Nota: El exceso será enviado a la billetera de comisiones del bot al finalizar la orden (ejecución de /release). Contacte al usuario para coordinar el reembolso._`,
+              { parse_mode: "Markdown" },
             );
           }
         }
@@ -144,66 +139,83 @@ export function startOrderTimeoutsMonitor(bot: Telegraf<BotContext>) {
       const expirationThreshold = now - TWENTY_FOUR_HOURS_MS;
       const timeoutThreshold = now - FIFTEEN_MINUTES_MS;
 
-      const expiredPending = await db.select().from(orders).where(
-        and(eq(orders.status, "PENDING"), lte(orders.createdAt, expirationThreshold))
-      );
+      const expiredPending = await db
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.status, OrderStatus.PENDING),
+            lte(orders.createdAt, expirationThreshold),
+          ),
+        );
 
       for (const order of expiredPending) {
-        const didCancel = await tryTransitionOrderStatus(order.id, ["PENDING"], "CANCELLED");
+        const didCancel = await tryTransitionOrderStatus(
+          order.id,
+          [OrderStatus.PENDING],
+          OrderStatus.CANCELLED,
+        );
         if (!didCancel) continue;
 
         if (order.channelMessageId && PUBLIC_CHANNEL_ID) {
-          try { await bot.telegram.deleteMessage(PUBLIC_CHANNEL_ID, order.channelMessageId); } catch (e) { }
+          try {
+            await bot.telegram.deleteMessage(
+              PUBLIC_CHANNEL_ID,
+              order.channelMessageId,
+            );
+          } catch (e) {}
         }
 
-        const creator = await getUser(order.creatorId);
-        if (creator) {
-          const dict = dictionaries[(creator.language as Language) || "es"];
-          try { await bot.telegram.sendMessage(order.creatorId, dict.orderExpiredCancelled(order.id), { parse_mode: "Markdown" }); } catch (e) { }
-        }
+        await safeNotify(bot, order.creatorId, (dict) =>
+          dict.orderExpiredCancelled(order.id),
+        );
       }
 
-      const takerTimeouts = await db.select().from(orders).where(
-        and(eq(orders.status, "WAITING_TAKER_CONFIRMATION"), lte(orders.updatedAt, timeoutThreshold))
-      );
+      const takerTimeouts = await db
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.status, OrderStatus.WAITING_TAKER_CONFIRMATION),
+            lte(orders.updatedAt, timeoutThreshold),
+          ),
+        );
 
       for (const order of takerTimeouts) {
         const takerIdToNotify = order.takerId; // Respaldar antes de que republish lo ponga en null
         const republished = await republishOrderSilently(bot, order.id);
-        
-        if (republished && takerIdToNotify) {
-          const taker = await getUser(takerIdToNotify);
-          if (taker) {
-            const dict = dictionaries[(taker.language as Language) || "es"];
-            try { 
-              await bot.telegram.sendMessage(takerIdToNotify, dict.takerTimeoutNotifyTaker(order.id), { parse_mode: "Markdown" }); 
-            } catch (e) { }
-          }
-        }
+
+        if (republished && takerIdToNotify)
+          await safeNotify(bot, takerIdToNotify, (dict) =>
+            dict.takerTimeoutNotifyTaker(order.id),
+          );
       }
 
-      const makerTimeouts = await db.select().from(orders).where(
-        and(eq(orders.status, "WAITING_MAKER_CONFIRMATION"), lte(orders.updatedAt, timeoutThreshold))
-      );
+      const makerTimeouts = await db
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.status, OrderStatus.WAITING_MAKER_CONFIRMATION),
+            lte(orders.updatedAt, timeoutThreshold),
+          ),
+        );
 
       for (const order of makerTimeouts) {
-        const didCancel = await tryTransitionOrderStatus(order.id, ["WAITING_MAKER_CONFIRMATION"], "CANCELLED");
+        const didCancel = await tryTransitionOrderStatus(
+          order.id,
+          [OrderStatus.WAITING_MAKER_CONFIRMATION],
+          OrderStatus.CANCELLED,
+        );
         if (!didCancel) continue;
 
-        const maker = await getUser(order.creatorId);
-        const taker = await getUser(order.takerId!);
-        
-        if (maker) {
-          const makerDict = dictionaries[(maker.language as Language) || "es"];
-          try { await bot.telegram.sendMessage(order.creatorId, makerDict.makerTimeoutNotifyMaker(order.id), { parse_mode: "Markdown" }); } catch (e) { }
-        }
-
-        if (taker) {
-          const takerDict = dictionaries[(taker.language as Language) || "es"];
-          try { await bot.telegram.sendMessage(order.takerId!, takerDict.makerTimeoutNotifyTaker(order.id), { parse_mode: "Markdown" }); } catch (e) { }
-        }
+        await safeNotify(bot, order.creatorId, (dict) =>
+          dict.makerTimeoutNotifyMaker(order.id),
+        );
+        await safeNotify(bot, order.takerId!, (dict) =>
+          dict.makerTimeoutNotifyTaker(order.id),
+        );
       }
-
     } catch (err) {
       console.error("Error en monitor de timeouts:", err);
     } finally {

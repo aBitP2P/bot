@@ -69,7 +69,6 @@ ADMIN_IDS="12345678,87654321"
 # Se recomienda usar un WIF exclusivo para el bot, ya que solo es para firmar transacciones, no guardar fondos.
 BOT_WIF="KXXXXX... (Llave WIF privada del bot)" 
 NETWORK="bitcoin" # 'testnet' o 'bitcoin'
-BOT_FEE="1" # Porcentaje total de comisión (ej. 1%) (dividido entre ambas contrapartes)
 
 BOT_FEE_XPUB=xpubxxxx
 # El xpub se usa para derivar direcciones para recibir la fee del bot
@@ -78,6 +77,8 @@ BOT_FEE_XPUB=xpubxxxx
 # Base de datos
 DATABASE_URL="mysql://user:pass@host:3306/dbname?ssl={\"rejectUnauthorized\":true}"
 ```
+
+Para configurar la comisión del bot, se debe de modificar el archivo ubicado en `src/config/fees.ts` (el porcentaje se divide entre ambas contrapartes)
 
 ---
 

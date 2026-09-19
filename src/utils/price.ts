@@ -1,6 +1,6 @@
 export const ratesCache = new Map<string, { rate: number; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 1000;
-const MIN_SATS = 60000;
+export const MIN_SATS = 2000;
 
 export async function getRateInfoFor(
   fiatAmount: number,

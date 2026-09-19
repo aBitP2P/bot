@@ -4,7 +4,7 @@ import {
   getFiatEmoji,
   OrderStatusLabelsEN,
 } from "../shared/constants.js";
-import { mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
+import { DUST_LIMIT, mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
 
 type OrderRow = typeof orders.$inferSelect;
 
@@ -83,7 +83,7 @@ export default {
   }) =>
     `⚠️ *Insufficient amount after applying margin*\n\n` +
     `After applying your ${margin}% margin, the total to receive dropped to ${satsAmount.toLocaleString()} sats.\n\n` +
-    `To meet the minimum of 60,000 sats, you must start the order with at least *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
+    `To meet the minimum of ${DUST_LIMIT.toLocaleString()} sats, you must start the order with at least *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
     `🔄 Please start the order creation again.`,
   wizardPreview: (
     type: string,

@@ -10,7 +10,7 @@ import {
   buildMarginKeyboard,
   buildTakeOrderKeyboard,
 } from "../shared/keyboards.js";
-import { getMinFiatAmount, getRateInfoFor, ratesCache } from "../utils/price.js";
+import { getMinFiatAmount, getRateInfoFor, MIN_SATS, ratesCache } from "../utils/price.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { generateOrderId } from "../utils/crypto.js";
 import { safeDeleteMsg, safeRemoveMarkup } from "../utils/telegram.js";
@@ -241,8 +241,8 @@ export async function handleWizardAction(ctx: BotContext) {
       margin,
     );
 
-    if (satsAmount < 60000) {
-      const minFiatRequired = (60000 / 100_000_000) * appliedRate;
+    if (satsAmount < MIN_SATS) {
+      const minFiatRequired = (MIN_SATS / 100_000_000) * appliedRate;
       await safeRemoveMarkup(ctx);
       await ctx.reply(
         ctx.dict.invalidAmountAfterMargin({

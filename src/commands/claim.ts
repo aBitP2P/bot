@@ -1,6 +1,6 @@
 import { getOrder } from "../db/orders.js";
 import type { BotContext, CallbackContext, CommandContext, OrderRecord } from "../types.js";
-import { getLiveMinerFee, checkEscrowFunding } from "../core/bitcoin/index.js";
+import { getLiveMinerFee, checkEscrowFunding, DUST_LIMIT } from "../core/bitcoin/index.js";
 import { orders } from "../db/schema.js";
 import { db } from "../db/index.js";
 import { and, eq, or } from "drizzle-orm";
@@ -8,6 +8,7 @@ import { OrderStatus } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { getParties } from "../utils/order.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
+import { getBotFeePercent } from "../config/fees.js";
 
 export async function claimCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -92,10 +93,23 @@ export async function startClaimPasswordFlow(
 ) {
   const dict = ctx.dict;
   const isRefund = order.status === OrderStatus.REFUNDABLE;
+  const baseSats = order.amountSats;
+  const botFeePercent = getBotFeePercent(baseSats); // <-- Obtener comisión
+  
+  let outputCount = 1;
+  let totalFundedSats = baseSats;
+
+  if (!isRefund) {
+    const funding = await checkEscrowFunding(order.escrowAddress!);
+    totalFundedSats = funding?.totalFundedSats ?? baseSats;
+    const buyerFee = Math.floor((baseSats * (botFeePercent / 100)) / 2);
+    const botOutputEstimate = totalFundedSats - baseSats + buyerFee;
+    outputCount = botOutputEstimate >= DUST_LIMIT ? 2 : 1;
+  }
 
   let { satsAmount: minerFeeSats, feeRate } = await getLiveMinerFee({
     escrowAddress: order.escrowAddress!,
-    outputCount: isRefund ? 1 : parseFloat(process.env.BOT_FEE!) === 0 ? 1 : 2,
+    outputCount,
     customFeeRate: ctx.user.customFee,
   });
 
@@ -108,9 +122,7 @@ export async function startClaimPasswordFlow(
     const totalFundedSats = funding?.totalFundedSats ?? order.amountSats;
     finalAmount = totalFundedSats - minerFeeSats;
   } else {
-    const baseSats = order.amountSats;
-    const totalBotFee = parseFloat(process.env.BOT_FEE!);
-    const totalBotFeeSats = Math.floor(baseSats * (totalBotFee / 100));
+    const totalBotFeeSats = Math.floor(baseSats * (botFeePercent / 100));
     const buyerFeeSats = Math.floor(totalBotFeeSats / 2);
     finalAmount = baseSats - buyerFeeSats - minerFeeSats;
   }

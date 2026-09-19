@@ -7,8 +7,9 @@ import {
   getBotFeeAddress,
 } from "./fees.js";
 import type { OrderRecord } from "../../types.js";
+import { getBotFeePercent } from "../../config/fees.js";
 
-const DUST_LIMIT = 546;
+export const DUST_LIMIT = 546;
 
 async function buildBasePsbt(order: OrderRecord, signerWif: string) {
   const signerKeypair = ECPair.fromWIF(signerWif, network);
@@ -103,11 +104,15 @@ export async function broadcastReleaseTx(
   } = await buildBasePsbt(order, buyerWif);
 
   const baseSats = order.amountSats;
-  const botFeePercent = parseFloat(process.env.BOT_FEE!);
+  const botFeePercent = getBotFeePercent(baseSats);
   const buyerFee = Math.floor((baseSats * (botFeePercent / 100)) / 2);
+
+  const botOutputEstimate = totalInput - baseSats + buyerFee;
+  const outputCount = botOutputEstimate >= DUST_LIMIT ? 2 : 1;
+
   const { satsAmount: minerFee } = await getLiveMinerFee({
     escrowAddress: null,
-    outputCount: botFeePercent === 0 ? 1 : 2,
+    outputCount: outputCount,
     customUtxosCount: utxosCount,
     customFeeRate: feeRate ?? null,
   });

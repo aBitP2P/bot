@@ -28,6 +28,7 @@ import { getRateInfoFor } from "../utils/price.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
+import { getBotFeePercent } from "../config/fees.js";
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
 export async function republishOrderSilently(
@@ -264,7 +265,7 @@ export async function proceedAfterTakerAmount(
 
   if (isTakerBuyer) {
     ctx.session.awaitingAddressForOrder = order.id;
-    const estimatedSats = await calculateSatsBeforeFees({
+    const estimatedSats = await estimateBuyerSats({
       fiatAmountLocked: order.fiatAmountLocked!,
       fiatCode: order.fiatCode,
       margin: order.margin,
@@ -290,7 +291,7 @@ export async function proceedAfterTakerAmount(
   }
 }
 
-async function calculateSatsBeforeFees({
+async function estimateBuyerSats({
   fiatAmountLocked,
   fiatCode,
   margin,
@@ -300,17 +301,17 @@ async function calculateSatsBeforeFees({
   margin: number;
 }): Promise<number> {
   try {
-    const { satsAmount: estimatedSatsBeforeFee } = await getRateInfoFor(
+    const { satsAmount: baseSats } = await getRateInfoFor(
       fiatAmountLocked,
       fiatCode,
       margin,
     );
-    const botFeePercent = parseFloat(process.env.BOT_FEE!);
+    const botFeePercent = getBotFeePercent(baseSats);
     const totalBotFeeSats = Math.floor(
-      estimatedSatsBeforeFee * (botFeePercent / 100),
+      baseSats * (botFeePercent / 100),
     );
     const partyFeeSats = Math.floor(totalBotFeeSats / 2);
-    return estimatedSatsBeforeFee - partyFeeSats;
+    return baseSats - partyFeeSats;
   } catch (error) {
     return 0;
   }
@@ -376,7 +377,7 @@ export async function handleMakerConfirm(
 
   if (isMakerBuyer) {
     ctx.session.awaitingAddressForOrder = orderId;
-    const estimatedSats = await calculateSatsBeforeFees({
+    const estimatedSats = await estimateBuyerSats({
       fiatAmountLocked: order.fiatAmountLocked!,
       fiatCode: order.fiatCode,
       margin: order.margin,

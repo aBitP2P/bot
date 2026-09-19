@@ -9,6 +9,7 @@ import { generateEscrow } from "../core/bitcoin/index.js";
 import { getRateInfoFor } from "../utils/price.js";
 import QRCode from "qrcode";
 import { getParties } from "../utils/order.js";
+import { getBotFeePercent } from "../config/fees.js";
 
 export async function initializeEscrow(ctx: BotContext, orderId: string) {
   const order = await getOrder(orderId);
@@ -39,8 +40,8 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
     order.margin,
   );
 
-  const totalBotFee = parseFloat(process.env.BOT_FEE!);
-  const sellerFeeSats = Math.floor(baseSats * (totalBotFee / 2 / 100));
+  const botFeePercent = getBotFeePercent(baseSats);
+  const sellerFeeSats = Math.floor(baseSats * (botFeePercent / 2 / 100));
 
   const satsToDeposit = baseSats + sellerFeeSats;
 

@@ -15,6 +15,7 @@ import { republishOrderSilently } from "../handlers/orderHandler.js";
 import { getParties } from "../utils/order.js";
 import { safeNotify } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
+import { getBotFeePercent } from "../config/fees.js";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID;
@@ -53,9 +54,9 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
       );
       if (!fundingInfo) continue;
 
-      const totalBotFee = parseFloat(process.env.BOT_FEE!);
+      const botFeePercent = getBotFeePercent(order.amountSats);
       const sellerFeeSats = Math.floor(
-        order.amountSats * (totalBotFee / 2 / 100),
+        order.amountSats * (botFeePercent / 2 / 100),
       );
       const expectedSats = order.amountSats + sellerFeeSats;
       if (fundingInfo.totalFundedSats < expectedSats) continue;

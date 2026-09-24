@@ -22,14 +22,14 @@ export async function claimCommand(ctx: CommandContext) {
       .where(
         or(
           and(
-            eq(orders.status, OrderStatus.RELEASABLE),
+            eq(orders.status, OrderStatus.Releasable),
             or(
               and(eq(orders.type, "SELL"), eq(orders.takerId, userId)),
               and(eq(orders.type, "BUY"), eq(orders.creatorId, userId)),
             ),
           ),
           and(
-            eq(orders.status, OrderStatus.REFUNDABLE),
+            eq(orders.status, OrderStatus.Refundable),
             or(
               and(eq(orders.type, "SELL"), eq(orders.creatorId, userId)),
               and(eq(orders.type, "BUY"), eq(orders.takerId, userId)),
@@ -63,13 +63,13 @@ export async function initiateClaim(
   const order = await getOrder(orderId);
 
   if (!order) return ctx.reply(dict.orderNotFound);
-  if (order.status !== OrderStatus.RELEASABLE && order.status !== OrderStatus.REFUNDABLE) {
+  if (order.status !== OrderStatus.Releasable && order.status !== OrderStatus.Refundable) {
     return ctx.reply(dict.invalidOrderStatus);
   }
 
   const { buyerId, sellerId } = getParties(order);
 
-  if (order.status === OrderStatus.RELEASABLE) {
+  if (order.status === OrderStatus.Releasable) {
     if (userId !== buyerId) return ctx.reply(dict.onlyBuyer);
     return startClaimPasswordFlow(ctx, order, order.buyerAddress!);
   }
@@ -92,7 +92,7 @@ export async function startClaimPasswordFlow(
   receivingAddress: string,
 ) {
   const dict = ctx.dict;
-  const isRefund = order.status === OrderStatus.REFUNDABLE;
+  const isRefund = order.status === OrderStatus.Refundable;
   const baseSats = order.amountSats;
   const botFeePercent = getBotFeePercent(baseSats); // <-- Obtener comisión
   

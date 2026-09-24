@@ -30,8 +30,8 @@ export default {
     "/fees - Verificar as taxas das suas ordens \n" +
     "/setfee - Define a taxa de rede que será usada\n"+
     `/exit — Cancelar a ação atual\n\n` +
-    `📢 Canal: ${Strings.ORDER_CHANNEL_TAG}\n` +
-    `💬 Grupo: ${Strings.GENERAL_CHAT_TAG}`,
+    `📢 Canal: ${Strings.OrderChannelTag}\n` +
+    `💬 Grupo: ${Strings.GeneralChatTag}`,
   commandUsage: (usage: string, example?: string) =>
     `⚠️ *Uso:* \`${usage}\` ${example ? `💡 \`${example}\`` : ""}`,
   cancelled: "❌ Processo cancelado.",
@@ -144,7 +144,7 @@ export default {
     orderId +
     "`\n" +
     "👉 " +
-    Strings.ORDER_CHANNEL_TAG,
+    Strings.OrderChannelTag,
   listOrders: (list: OrderRow[]) => {
     if (list.length === 0) return "📭 Você não possui ordens registradas.";
 
@@ -340,7 +340,7 @@ export default {
     newAmountFiat: string,
     fiatCode: string,
   ) =>
-    `ℹ️ Sua ordem de intervalo foi parcialmente concluída. Uma nova ordem (\`${newOrderId}\`) foi republicada para o saldo restante: *${newAmountFiat} ${fiatCode}* em ${Strings.ORDER_CHANNEL_TAG}.`,
+    `ℹ️ Sua ordem de intervalo foi parcialmente concluída. Uma nova ordem (\`${newOrderId}\`) foi republicada para o saldo restante: *${newAmountFiat} ${fiatCode}* em ${Strings.OrderChannelTag}.`,
 
   // --------------------------- Avaliação -----------------------------------
   rateCounterpartyMessage: "👉 Avalie sua contraparte:",

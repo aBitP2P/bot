@@ -37,8 +37,8 @@ export async function republishOrderSilently(
 ) {
   const didReset = await tryTransitionOrderStatus(
     orderId,
-    [OrderStatus.WAITING_TAKER_CONFIRMATION],
-    OrderStatus.PENDING,
+    [OrderStatus.WaitingTakerConfirmation],
+    OrderStatus.Pending,
     {
       takerId: null,
       buyerAddress: null,
@@ -103,8 +103,8 @@ export async function handleOrderCancelledRepublish(
 ) {
   const didReset = await tryTransitionOrderStatus(
     orderId,
-    [OrderStatus.WAITING_TAKER_CONFIRMATION, OrderStatus.WAITING_MAKER_CONFIRMATION],
-    OrderStatus.PENDING,
+    [OrderStatus.WaitingTakerConfirmation, OrderStatus.WaitingMakerConfirmation],
+    OrderStatus.Pending,
     {
       takerId: null,
       buyerAddress: null,
@@ -196,8 +196,8 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
   // takerId pise silenciosamente al primero.
   const didTake = await tryTransitionOrderStatus(
     orderId,
-    [OrderStatus.PENDING],
-    OrderStatus.WAITING_TAKER_CONFIRMATION,
+    [OrderStatus.Pending],
+    OrderStatus.WaitingTakerConfirmation,
     { takerId },
   );
   if (!didTake) return ctx.answerCbQuery(dict.orderTaken, { show_alert: true });
@@ -230,7 +230,7 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
   const takerId = ctx.from?.id;
   const order = await getOrder(orderId);
   if (!order || !takerId) return;
-  if (order.status !== OrderStatus.WAITING_TAKER_CONFIRMATION) return;
+  if (order.status !== OrderStatus.WaitingTakerConfirmation) return;
   if (order.takerId !== takerId) {
     return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
   }
@@ -331,7 +331,7 @@ export async function notifyMakerForConfirmation(
 
   await db
     .update(orders)
-    .set({ status: OrderStatus.WAITING_MAKER_CONFIRMATION })
+    .set({ status: OrderStatus.WaitingMakerConfirmation })
     .where(eq(orders.id, order.id));
 
   const displayAmount = order.fiatAmountLocked
@@ -365,7 +365,7 @@ export async function handleMakerConfirm(
   const makerId = ctx.from.id;
   const order = await getOrder(orderId);
   if (!order || !makerId) return;
-  if (order.status !== OrderStatus.WAITING_MAKER_CONFIRMATION) return;
+  if (order.status !== OrderStatus.WaitingMakerConfirmation) return;
   if (order.creatorId !== makerId) {
     return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
   }
@@ -412,7 +412,7 @@ export async function handleMakerConfirm(
     );
     await db
       .update(orders)
-      .set({ status: OrderStatus.WAITING_ESCROW })
+      .set({ status: OrderStatus.WaitingEscrow })
       .where(eq(orders.id, orderId));
 
     await initializeEscrow(ctx, orderId);

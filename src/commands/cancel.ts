@@ -45,13 +45,13 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
   const { buyerId, sellerId } = getParties(order);
 
-  if (order.status === OrderStatus.PENDING) {
+  if (order.status === OrderStatus.Pending) {
     if (order.creatorId !== userId) return ctx.reply(dict.unauthorizedAccess);
 
     const didCancel = await tryTransitionOrderStatus(
       orderId,
-      [OrderStatus.PENDING],
-      OrderStatus.CANCELLED,
+      [OrderStatus.Pending],
+      OrderStatus.Cancelled,
     );
     if (!didCancel) return ctx.reply(dict.cancelNotAllowed); // alguien más ya la tomó justo ahora
 
@@ -76,7 +76,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
   const counterpartyId = userId === sellerId ? buyerId : sellerId;
 
   switch (order.status) {
-    case OrderStatus.WAITING_ESCROW: {
+    case OrderStatus.WaitingEscrow: {
       if (userId !== sellerId) return ctx.reply(dict.cancelOnlySeller);
 
       if (order.escrowAddress) {
@@ -88,8 +88,8 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
       const didCancel = await tryTransitionOrderStatus(
         orderId,
-        [OrderStatus.WAITING_ESCROW],
-        OrderStatus.CANCELLED,
+        [OrderStatus.WaitingEscrow],
+        OrderStatus.Cancelled,
       );
       if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
 
@@ -107,8 +107,8 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
       return;
     }
 
-    case OrderStatus.WAITING_TAKER_CONFIRMATION:
-    case OrderStatus.WAITING_MAKER_CONFIRMATION: {
+    case OrderStatus.WaitingTakerConfirmation:
+    case OrderStatus.WaitingMakerConfirmation: {
       const isOriginalCreator = userId === order.creatorId;
 
       if (isOriginalCreator) {
@@ -116,7 +116,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
         const didCancel = await tryTransitionOrderStatus(
           orderId,
           [order.status],
-          OrderStatus.CANCELLED,
+          OrderStatus.Cancelled,
         );
         if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
 
@@ -147,15 +147,15 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
       return handleOrderCancelledRepublish(ctx, orderId);
     }
 
-    case OrderStatus.UNCONFIRMED:
+    case OrderStatus.Unconfirmed:
       return ctx.reply(dict.cancelUnconfirmed);
 
-    case OrderStatus.ACTIVE:
-    case OrderStatus.FIAT_SENT: {
+    case OrderStatus.Active:
+    case OrderStatus.FiatSent: {
       const didRequest = await tryTransitionOrderStatus(
         orderId,
         [order.status],
-        OrderStatus.CANCEL_REQUESTED,
+        OrderStatus.CancelRequested,
         { cancelRequestedBy: userId },
       );
       if (!didRequest) return ctx.reply(dict.cancelNotAllowed);
@@ -175,7 +175,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
     }
 
     // Ya hay una solicitud pendiente: si la contraparte confirma, se habilita el reembolso.
-    case OrderStatus.CANCEL_REQUESTED: {
+    case OrderStatus.CancelRequested: {
       const requesterId = order.cancelRequestedBy;
 
       if (requesterId === userId) {
@@ -184,8 +184,8 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
       const didConfirm = await tryTransitionOrderStatus(
         orderId,
-        [OrderStatus.CANCEL_REQUESTED],
-        OrderStatus.REFUNDABLE,
+        [OrderStatus.CancelRequested],
+        OrderStatus.Refundable,
         { cancelRequestedBy: null },
       );
       if (!didConfirm) return ctx.reply(dict.cancelNotAllowed);

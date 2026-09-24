@@ -30,8 +30,8 @@ export default {
     "/fees - Revisa como están las comisiones para tus órdenes \n" +
     "/setfee - Establece la comisión de red que se usará\n" + 
     `/exit — Cancelar la acción actual\n\n` +
-    `📢 Canal: ${Strings.ORDER_CHANNEL_TAG}\n` +
-    `💬 Grupo: ${Strings.GENERAL_CHAT_TAG}`,
+    `📢 Canal: ${Strings.OrderChannelTag}\n` +
+    `💬 Grupo: ${Strings.GeneralChatTag}`,
   commandUsage: (usage: string, example?: string) =>
     `⚠️ *Uso:* \`${usage}\` ${example ? `💡 \`${example}\`` : ""}`,
   cancelled: "❌ Proceso cancelado.",
@@ -144,7 +144,7 @@ export default {
     orderId +
     "`\n" +
     "👉 " +
-    Strings.ORDER_CHANNEL_TAG,
+    Strings.OrderChannelTag,
   listOrders: (list: OrderRow[]) => {
     if (list.length === 0) return "📭 No tienes órdenes registradas.";
 
@@ -341,7 +341,7 @@ export default {
     newAmountFiat: string,
     fiatCode: string,
   ) =>
-    `ℹ️ Tu orden de rango ha sido completada parcialmente. Se ha republicado una nueva orden (\`${newOrderId}\`) por el saldo restante: *${newAmountFiat} ${fiatCode}* en ${Strings.ORDER_CHANNEL_TAG}.`,
+    `ℹ️ Tu orden de rango ha sido completada parcialmente. Se ha republicado una nueva orden (\`${newOrderId}\`) por el saldo restante: *${newAmountFiat} ${fiatCode}* en ${Strings.OrderChannelTag}.`,
 
   // --------------------------- Rating -----------------------------------
   rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",

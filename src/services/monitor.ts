@@ -29,8 +29,8 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
       .from(orders)
       .where(
         or(
-          eq(orders.status, OrderStatus.WAITING_ESCROW),
-          eq(orders.status, OrderStatus.UNCONFIRMED),
+          eq(orders.status, OrderStatus.WaitingEscrow),
+          eq(orders.status, OrderStatus.Unconfirmed),
         ),
       );
 
@@ -63,10 +63,10 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
 
       const { buyerId, sellerId } = getParties(order);
 
-      if (order.status === OrderStatus.WAITING_ESCROW && !fundingInfo.confirmed) {
+      if (order.status === OrderStatus.WaitingEscrow && !fundingInfo.confirmed) {
         await db
           .update(orders)
-          .set({ status: OrderStatus.UNCONFIRMED, fundingTxid: fundingInfo.txid })
+          .set({ status: OrderStatus.Unconfirmed, fundingTxid: fundingInfo.txid })
           .where(eq(orders.id, order.id));
 
         const seller = await getUser(sellerId!);
@@ -85,11 +85,11 @@ export function startEscrowMonitor(bot: Telegraf<BotContext>) {
           { parse_mode: "Markdown" },
         );
       }
-      if (fundingInfo.confirmed && order.status !== OrderStatus.ACTIVE) {
+      if (fundingInfo.confirmed && order.status !== OrderStatus.Active) {
         const didTransition = await tryTransitionOrderStatus(
           order.id,
-          [OrderStatus.WAITING_ESCROW, OrderStatus.UNCONFIRMED],
-          OrderStatus.ACTIVE,
+          [OrderStatus.WaitingEscrow, OrderStatus.Unconfirmed],
+          OrderStatus.Active,
           { fundingTxid: fundingInfo.txid },
         );
 
@@ -145,7 +145,7 @@ export function startOrderTimeoutsMonitor(bot: Telegraf<BotContext>) {
         .from(orders)
         .where(
           and(
-            eq(orders.status, OrderStatus.PENDING),
+            eq(orders.status, OrderStatus.Pending),
             lte(orders.createdAt, expirationThreshold),
           ),
         );
@@ -153,8 +153,8 @@ export function startOrderTimeoutsMonitor(bot: Telegraf<BotContext>) {
       for (const order of expiredPending) {
         const didCancel = await tryTransitionOrderStatus(
           order.id,
-          [OrderStatus.PENDING],
-          OrderStatus.CANCELLED,
+          [OrderStatus.Pending],
+          OrderStatus.Cancelled,
         );
         if (!didCancel) continue;
 
@@ -177,7 +177,7 @@ export function startOrderTimeoutsMonitor(bot: Telegraf<BotContext>) {
         .from(orders)
         .where(
           and(
-            eq(orders.status, OrderStatus.WAITING_TAKER_CONFIRMATION),
+            eq(orders.status, OrderStatus.WaitingTakerConfirmation),
             lte(orders.updatedAt, timeoutThreshold),
           ),
         );
@@ -197,7 +197,7 @@ export function startOrderTimeoutsMonitor(bot: Telegraf<BotContext>) {
         .from(orders)
         .where(
           and(
-            eq(orders.status, OrderStatus.WAITING_MAKER_CONFIRMATION),
+            eq(orders.status, OrderStatus.WaitingMakerConfirmation),
             lte(orders.updatedAt, timeoutThreshold),
           ),
         );
@@ -205,8 +205,8 @@ export function startOrderTimeoutsMonitor(bot: Telegraf<BotContext>) {
       for (const order of makerTimeouts) {
         const didCancel = await tryTransitionOrderStatus(
           order.id,
-          [OrderStatus.WAITING_MAKER_CONFIRMATION],
-          OrderStatus.CANCELLED,
+          [OrderStatus.WaitingMakerConfirmation],
+          OrderStatus.Cancelled,
         );
         if (!didCancel) continue;
 

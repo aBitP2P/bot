@@ -29,7 +29,7 @@ const disputeCodesCache = new Map<
   { buyerCode: string; sellerCode: string }
 >();
 
-const DISPUTE_ELIGIBLE_STATUSES = [OrderStatus.ACTIVE, OrderStatus.FIAT_SENT, OrderStatus.CANCEL_REQUESTED];
+const DISPUTE_ELIGIBLE_STATUSES = [OrderStatus.Active, OrderStatus.FiatSent, OrderStatus.CancelRequested];
 
 async function getDisplayHandle(
   telegramId: number,
@@ -56,13 +56,13 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
   const didTransition = await tryTransitionOrderStatus(
     orderId,
     DISPUTE_ELIGIBLE_STATUSES,
-    OrderStatus.DISPUTE,
+    OrderStatus.Dispute,
     { cancelRequestedBy: null },
   );
 
   if (!didTransition) {
     const fresh = await getOrder(orderId);
-    if (fresh?.status === OrderStatus.DISPUTE) return ctx.reply(dict.disputeAlreadyOpen);
+    if (fresh?.status === OrderStatus.Dispute) return ctx.reply(dict.disputeAlreadyOpen);
     return ctx.reply(dict.disputeNotAllowed);
   }
 
@@ -118,14 +118,14 @@ export async function takeDispute(ctx: CommandContext, orderId: string) {
   if (!isAdmin(adminId)) return ctx.reply(dict.adminOnlyAction);
 
   const order = await getOrder(orderId);
-  if (!order || order.status !== OrderStatus.DISPUTE)
+  if (!order || order.status !== OrderStatus.Dispute)
     return ctx.reply(dict.disputeNotFoundOrNotOpen);
 
   // Asignación atómica: solo si nadie más la tomó ya (evita doble-asignación
   // si dos admins ejecutan /takedispute casi simultáneamente).
   const assigned = await tryConditionalUpdate(
     orderId,
-    and(eq(orders.status, OrderStatus.DISPUTE), isNull(orders.disputeAdminId)),
+    and(eq(orders.status, OrderStatus.Dispute), isNull(orders.disputeAdminId)),
     { disputeAdminId: adminId },
   );
 
@@ -192,7 +192,7 @@ export async function settleCommand(ctx: CommandContext, orderId: string) {
   if (!isAdmin(adminId)) return ctx.reply(dict.adminOnlyAction);
 
   const order = await getOrder(orderId);
-  if (!order || order.status !== OrderStatus.DISPUTE)
+  if (!order || order.status !== OrderStatus.Dispute)
     return ctx.reply(dict.settleNotFoundOrNotInDispute);
   if (order.disputeAdminId !== adminId)
     return ctx.reply(dict.settleNotAssignedAdmin);
@@ -236,7 +236,7 @@ export async function resolveDispute(
   if (!order)
     return ctx.answerCbQuery(dict.orderNotFound, { show_alert: true });
 
-  if (order.status !== OrderStatus.DISPUTE || order.disputeAdminId !== adminId) {
+  if (order.status !== OrderStatus.Dispute || order.disputeAdminId !== adminId) {
     await safeRemoveMarkup(ctx);
     return ctx.answerCbQuery(
       order.disputeAdminId !== adminId
@@ -246,11 +246,11 @@ export async function resolveDispute(
     );
   }
 
-  const toStatus = resolution === "BUYER" ? OrderStatus.RELEASABLE : OrderStatus.REFUNDABLE;
+  const toStatus = resolution === "BUYER" ? OrderStatus.Releasable : OrderStatus.Refundable;
 
   const resolved = await tryConditionalUpdate(
     orderId,
-    and(eq(orders.status, OrderStatus.DISPUTE), eq(orders.disputeAdminId, adminId)),
+    and(eq(orders.status, OrderStatus.Dispute), eq(orders.disputeAdminId, adminId)),
     { status: toStatus, disputeResolution: resolution },
   );
 

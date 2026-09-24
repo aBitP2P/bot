@@ -30,7 +30,7 @@ export async function releaseCommand(ctx: CommandContext) {
       .from(orders)
       .where(
         and(
-          eq(orders.status, OrderStatus.FIAT_SENT),
+          eq(orders.status, OrderStatus.FiatSent),
           or(
             and(eq(orders.type, "SELL"), eq(orders.creatorId, userId)),
             and(eq(orders.type, "BUY"), eq(orders.takerId, userId)),
@@ -59,7 +59,7 @@ export async function askReleaseConfirmation(ctx: CallbackContext | CommandConte
   try { if (ctx.callbackQuery) await ctx.deleteMessage(); } catch (e) {}
   const order = await getOrder(orderId);
   if (!order) return ctx.reply(ctx.dict.orderNotFound);
-  if (order.status !== OrderStatus.FIAT_SENT)
+  if (order.status !== OrderStatus.FiatSent)
     return ctx.reply(ctx.dict.waitForBuyerFiatSent(order.id), {
       parse_mode: "Markdown",
     });
@@ -83,8 +83,8 @@ export async function doFundsRelease(ctx: CallbackContext | CommandContext, orde
 
   const didRelease = await tryTransitionOrderStatus(
     order.id,
-    [OrderStatus.FIAT_SENT],
-    OrderStatus.RELEASABLE,
+    [OrderStatus.FiatSent],
+    OrderStatus.Releasable,
   );
   if (!didRelease) return ctx.reply(ctx.dict.invalidOrderStatus);
 

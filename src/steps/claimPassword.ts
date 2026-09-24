@@ -25,12 +25,12 @@ export async function claimPasswordStep(ctx: CommandContext) {
   if (!order) return ctx.reply(ctx.dict.orderNotFound);
 
   if (
-    order.status !== OrderStatus.RELEASABLE &&
-    order.status !== OrderStatus.REFUNDABLE
+    order.status !== OrderStatus.Releasable &&
+    order.status !== OrderStatus.Refundable
   )
     return ctx.reply(ctx.dict.invalidOrderStatus);
 
-  const isRefund = order.status === OrderStatus.REFUNDABLE;
+  const isRefund = order.status === OrderStatus.Refundable;
   const { sellerId, buyerId } = getParties(order)
 
   if (isRefund && userId !== sellerId) return ctx.reply(ctx.dict.onlySeller);
@@ -50,8 +50,8 @@ export async function claimPasswordStep(ctx: CommandContext) {
   });
 
   try {
-    const targetStatus = isRefund ? OrderStatus.REFUNDED : OrderStatus.COMPLETED;
-    const currentValidStatus = isRefund ? OrderStatus.REFUNDABLE : OrderStatus.RELEASABLE;
+    const targetStatus = isRefund ? OrderStatus.Refunded : OrderStatus.Completed;
+    const currentValidStatus = isRefund ? OrderStatus.Refundable : OrderStatus.Releasable;
     let txid = "";
     try {
       txid = isRefund

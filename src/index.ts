@@ -179,8 +179,8 @@ bot.on("callback_query", async (ctx, next) => {
 
     const didCancel = await tryTransitionOrderStatus(
       orderId,
-      [OrderStatus.WAITING_MAKER_CONFIRMATION],
-      OrderStatus.CANCELLED,
+      [OrderStatus.WaitingMakerConfirmation],
+      OrderStatus.Cancelled,
     );
     if (!didCancel) {
       await safeRemoveMarkup(ctx);
@@ -236,14 +236,14 @@ bot.start(async (ctx) => {
     `⚠️ *Paso 1:* Usa /setpass para configurar tu contraseña y activar tu cuenta.\n` +
     `🌍 *Idioma:* Usa /setlang para cambiar a inglés (u otro idioma).\n` +
     `📚 *Ayuda:* Usa /help para ver los comandos.\n` +
-    `📢 *Comunidad:* Chat general ${Strings.GENERAL_CHAT_TAG} | Órdenes ${Strings.ORDER_CHANNEL_TAG}\n` +
+    `📢 *Comunidad:* Chat general ${Strings.GeneralChatTag} | Órdenes ${Strings.OrderChannelTag}\n` +
     `⚡️ *Nota:* Estamos en fase inicial. ¡Publica tus ofertas y ayúdanos a crear liquidez!\n\n` +
     `➖ ➖ ➖ ➖ ➖ ➖ ➖\n\n` +
     `🇬🇧 *ENGLISH*\n` +
     `⚠️ *Step 1:* Use /setpass to set your password and activate your account.\n` +
     `🌍 *Language:* Use /setlang to change the bot's language.\n` +
     `📚 *Help:* Use /help to see all commands.\n` +
-    `📢 *Community:* General chat ${Strings.GENERAL_CHAT_TAG} | Orders ${Strings.ORDER_CHANNEL_TAG}\n` +
+    `📢 *Community:* General chat ${Strings.GeneralChatTag} | Orders ${Strings.OrderChannelTag}\n` +
     `⚡️ *Note:* We are in early stages. Place your offers to help us build liquidity!`;
 
   await ctx.reply(text, { parse_mode: "Markdown" });
@@ -275,7 +275,7 @@ bot.on(message("text"), async (ctx, next) => {
     const order = await getOrder(orderToSetAmount);
     if (
       !order ||
-      order.status !== OrderStatus.WAITING_TAKER_CONFIRMATION ||
+      order.status !== OrderStatus.WaitingTakerConfirmation ||
       order.takerId !== ctx.from.id
     ) {
       ctx.session.awaitingAmountForOrder = undefined;
@@ -315,8 +315,8 @@ bot.on(message("text"), async (ctx, next) => {
 
     if (
       !order ||
-      (order.status !== OrderStatus.WAITING_TAKER_CONFIRMATION &&
-        order.status !== OrderStatus.WAITING_MAKER_CONFIRMATION)
+      (order.status !== OrderStatus.WaitingTakerConfirmation &&
+        order.status !== OrderStatus.WaitingMakerConfirmation)
     ) {
       ctx.session.awaitingAddressForOrder = undefined;
       return next();
@@ -336,14 +336,14 @@ bot.on(message("text"), async (ctx, next) => {
 
     const dict = ctx.dict;
 
-    if (order.status === OrderStatus.WAITING_TAKER_CONFIRMATION) {
+    if (order.status === OrderStatus.WaitingTakerConfirmation) {
       await ctx.reply(dict.waitMaker, { parse_mode: "Markdown" });
       await notifyMakerForConfirmation(ctx, order);
-    } else if (order.status === OrderStatus.WAITING_MAKER_CONFIRMATION) {
+    } else if (order.status === OrderStatus.WaitingMakerConfirmation) {
       await ctx.reply(dict.waitTaker, { parse_mode: "Markdown" });
       await db
         .update(orders)
-        .set({ status: OrderStatus.WAITING_ESCROW })
+        .set({ status: OrderStatus.WaitingEscrow })
         .where(eq(orders.id, orderId));
 
       await initializeEscrow(ctx, order.id);

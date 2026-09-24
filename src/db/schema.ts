@@ -23,7 +23,7 @@ export const orders = mysqlTable("orders", {
   type: varchar("type", { length: 10 }).notNull(),
   creatorId: bigint("creator_id", { mode: "number" }).notNull(),
   takerId: bigint("taker_id", { mode: "number" }),
-  status: varchar("status", { length: 64 }).notNull().default(OrderStatus.PENDING),
+  status: varchar("status", { length: 64 }).notNull().default(OrderStatus.Pending),
 
   amountFiat: varchar("amount_fiat", { length: 64 }).notNull(),
   fiatCode: varchar("fiat_code", { length: 10 }).notNull(),

@@ -30,8 +30,8 @@ export default {
     "/fees - Check the fees applied for your orders \n" +
     "/setfee - Sets the network fee to be used\n" +
     `/exit — Cancel current action\n\n` +
-    `📢 Channel: ${Strings.ORDER_CHANNEL_TAG} \n` +
-    `💬 Group: ${Strings.GENERAL_CHAT_TAG}`,
+    `📢 Channel: ${Strings.OrderChannelTag} \n` +
+    `💬 Group: ${Strings.GeneralChatTag}`,
   commandUsage: (usage: string, example?: string) =>
     `⚠️ *Usage:* \`${usage}\` ${example ? `💡 \`${example}\`` : ""}`,
   cancelled: "❌ Process cancelled.",
@@ -143,7 +143,7 @@ export default {
     orderId +
     "`\n" +
     "👉 " +
-    Strings.ORDER_CHANNEL_TAG,
+    Strings.OrderChannelTag,
   listOrders: (list: OrderRow[]) => {
     if (list.length === 0) return "📭 You have no registered orders.";
 
@@ -334,7 +334,7 @@ export default {
     `The escrow is ready to be claimed. Run the following command to start the withdrawal to your wallet:\n\n` +
     `\`/claim ${orderId}\``,
   rangeOrderPartiallyCompleted: (newOrderId: string, newAmountFiat: string, fiatCode: string) =>
-    `ℹ️ Your range order has been partially completed. A new order (\`${newOrderId}\`) has been republished for the remaining balance: *${newAmountFiat} ${fiatCode}* in ${Strings.ORDER_CHANNEL_TAG}.`,
+    `ℹ️ Your range order has been partially completed. A new order (\`${newOrderId}\`) has been republished for the remaining balance: *${newAmountFiat} ${fiatCode}* in ${Strings.OrderChannelTag}.`,
 
   // --------------------------- Rating -----------------------------------
   rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",

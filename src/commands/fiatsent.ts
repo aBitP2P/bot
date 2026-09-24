@@ -21,7 +21,7 @@ export async function fiatsentCommand(ctx: CommandContext) {
       .from(orders)
       .where(
         and(
-          eq(orders.status, OrderStatus.ACTIVE),
+          eq(orders.status, OrderStatus.Active),
           or(
             and(eq(orders.type, "SELL"), eq(orders.takerId, userId)),
             and(eq(orders.type, "BUY"), eq(orders.creatorId, userId)),
@@ -49,7 +49,7 @@ export async function markAsFiatSent(ctx: CallbackContext | CommandContext, orde
 
   try { if (ctx.callbackQuery) await ctx.deleteMessage(); } catch(e) {}
   if (!order) return ctx.reply(dict.orderNotFound); 
-  if (order.status !== OrderStatus.ACTIVE) return ctx.reply(dict.invalidOrderStatus);
+  if (order.status !== OrderStatus.Active) return ctx.reply(dict.invalidOrderStatus);
 
   const { buyerId, sellerId } = getParties(order);
 
@@ -57,8 +57,8 @@ export async function markAsFiatSent(ctx: CallbackContext | CommandContext, orde
 
   const didMark = await tryTransitionOrderStatus(
     orderId,
-    [OrderStatus.ACTIVE],
-    OrderStatus.FIAT_SENT,
+    [OrderStatus.Active],
+    OrderStatus.FiatSent,
   );
   if (!didMark) return ctx.reply(dict.invalidOrderStatus);
 

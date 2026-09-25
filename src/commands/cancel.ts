@@ -11,6 +11,7 @@ import { OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { checkEscrowFunding } from "../core/bitcoin/transactions.js";
 import { getParties } from "../utils/order.js";
+import { getBotFeePercent } from "../config/fees.js";
 
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -22,8 +23,8 @@ export async function cancelCommand(ctx: CommandContext) {
   if (args.length < 2) {
     let userOrders = await getUserOrders(userId);
     if (userOrders.length === 0) return ctx.reply(dict.noOrdersFound);
-    await ctx.reply(dict.selectOrderToCancel , {
-      ...buildOrderSelectKeyboard(userOrders, "cancelCommand")
+    await ctx.reply(dict.selectOrderToCancel, {
+      ...buildOrderSelectKeyboard(userOrders, "cancelCommand"),
     });
     return;
   }
@@ -32,7 +33,10 @@ export async function cancelCommand(ctx: CommandContext) {
   return await handleOrderCancelFromCommand(ctx, orderId);
 }
 
-export async function handleOrderCancelFromCommand(ctx: CommandContext | CallbackContext, orderId: string) {
+export async function handleOrderCancelFromCommand(
+  ctx: CommandContext | CallbackContext,
+  orderId: string,
+) {
   const userId = ctx.from.id;
   const dict = ctx.dict;
   const order = await getOrder(orderId);
@@ -78,11 +82,40 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
   switch (order.status) {
     case OrderStatus.WaitingEscrow: {
       if (userId !== sellerId) return ctx.reply(dict.cancelOnlySeller);
-
+      const TIME_LOCK_MS = 10 * 60 * 1000;
+      if (Date.now() - order.updatedAt < TIME_LOCK_MS) {
+        return ctx.reply(dict.cancelAddressWait);
+      }
       if (order.escrowAddress) {
         const funding = await checkEscrowFunding(order.escrowAddress);
         if (funding && funding.totalFundedSats > 0) {
-          return ctx.reply(dict.cancelUnconfirmed);
+          const botFeePercent = getBotFeePercent(order.amountSats);
+          const sellerFeeSats = Math.floor(
+            order.amountSats * (botFeePercent / 2 / 100),
+          );
+          const expectedSats = order.amountSats + sellerFeeSats;
+
+          if (funding.totalFundedSats < expectedSats) {
+            const didCancel = await tryTransitionOrderStatus(
+              orderId,
+              [OrderStatus.WaitingEscrow],
+              OrderStatus.Refundable,
+            );
+            if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
+
+            if (counterpartyId) {
+              const counterparty = await getUser(counterpartyId);
+              const cDict = getUserDict(counterparty?.language);
+              await ctx.telegram.sendMessage(
+                counterpartyId,
+                cDict.counterpartyCanceledDeleted(order.id),
+                { parse_mode: "Markdown" },
+              );
+            }
+            return ctx.reply(dict.partialDepositCancelled);
+          } else {
+            return ctx.reply(dict.cancelUnconfirmed);
+          }
         }
       }
 
@@ -199,7 +232,7 @@ export async function handleOrderCancelFromCommand(ctx: CommandContext | Callbac
 
       if (requesterId) {
         const requester = await getUser(requesterId);
-        const rDict = getUserDict(requester?.language)
+        const rDict = getUserDict(requester?.language);
         await ctx.telegram.sendMessage(
           requesterId,
           requesterId === sellerId

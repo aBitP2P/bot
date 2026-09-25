@@ -341,12 +341,15 @@ bot.on(message("text"), async (ctx, next) => {
       await notifyMakerForConfirmation(ctx, order);
     } else if (order.status === OrderStatus.WaitingMakerConfirmation) {
       await ctx.reply(dict.waitTaker, { parse_mode: "Markdown" });
-      await db
-        .update(orders)
-        .set({ status: OrderStatus.WaitingEscrow })
-        .where(eq(orders.id, orderId));
+      const didTransition = await tryTransitionOrderStatus(
+        orderId,
+        [OrderStatus.WaitingMakerConfirmation],
+        OrderStatus.WaitingEscrow,
+      );
 
-      await initializeEscrow(ctx, order.id);
+      if (didTransition) {
+        await initializeEscrow(ctx, orderId);
+      }
     }
     return;
   }

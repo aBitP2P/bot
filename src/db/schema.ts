@@ -45,7 +45,6 @@ export const orders = mysqlTable("orders", {
   amountSats: bigint("amount_sats", { mode: "number" }).notNull().default(0),
   escrowAddress: varchar("escrow_address", { length: 255 }),
   witnessScript: text("witness_script"),
-  fundingTxid: varchar("funding_txid", { length: 128 }),
   payoutTxid: varchar("payout_txid", { length: 128 }),
 
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),

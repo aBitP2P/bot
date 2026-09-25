@@ -257,11 +257,38 @@ export default {
     `Please, send \`${sats / 100_000_000}\` BTC to the following on-chain address:\n\n` +
     `\`${address}\`\n\n` +
     `_Once the transaction is confirmed (2 confirmations), we will put you in contact. Please make sure to send the EXACT amount, otherwise, it might require manual attention._`,
-  escrowUnconfirmed: (txid: string) =>
+  escrowUnconfirmed: (escrowAddress: string) =>
     `⏳ *Transaction detected on the network.*\n\n` +
-    `ID: \`${txid}\`\n` +
-    `[View in explorer](${mempoolBaseURL}/tx/${txid})\n` +
+    `[View in explorer](${mempoolBaseURL}/address/${escrowAddress})\n` +
     `_Waiting for 2 confirmations to proceed safely..._`,
+  escrowFundingFailed: (
+    utxoCount: number,
+    totalFundedSats: number,
+    expectedSats: number,
+    orderId: string,
+  ) =>
+    `❌ *Funding failed*\n\n${utxoCount} deposits have been detected, but the amount is still below the expected amount (${totalFundedSats / 100_000_000} BTC received out of ${expectedSats / 100_000_000} BTC required). The maximum limit is 2 transactions.\n\nThe order has been cancelled. Run \`/claim ${orderId}\` to request a refund of your funds.`,
+  incompleteFunding: (
+    totalFundedSats: number,
+    expectedSats: number,
+    remainingSats: number,
+  ) =>
+    `⚠️ *Incomplete deposit*\n\nWe detected ${totalFundedSats / 100_000_000} BTC received, but the order requires ${expectedSats / 100_000_000} BTC.\n\nRemaining amount to deposit: \`${remainingSats / 100_000_000}\` BTC.\n\n_You have 1 additional sending attempt. If the second deposit does not complete the required amount, the order will be cancelled and moved to refund._`,
+  fundingExpired:
+    "⚠️ Your order has expired because the deposit was not completed on time. Use /claim to refund the partial funds sent.",
+  sellerDidNotFund: (orderId: string) =>
+    `⚠️ *Seller did not deposit*\n\nThe user who took your order \`${orderId}\` did not make the deposit within the established time limit. Your offer has been reposted in the channel.`,
+  partialDepositCancelled:
+    "❌ You have cancelled the order with a partial deposit. Use /claim to request a refund of the funds sent.",
+  orderCancelledSellerFunding: `❌ *Order cancelled*\n\nThe seller did not complete the deposit correctly within the allowed transaction limit. The order has been automatically cancelled, and the funds will be refunded to their owner.`,
+  orderCancelledTransactionDisappeared:
+    "❌ *Order cancelled*\n\nThe transaction has disappeared from the network (RBF or removed from the mempool).",
+  orderCancelledSellerDepositReverted:
+    "❌ *Order cancelled*\n\nThe seller's deposit was reverted or disappeared from the network.",
+  tamperingDetected:
+    "❌ *Tampering detected*\n\nA partial reversal of the funds on the network was detected. The order has been cancelled. Run /claim to recover the remaining balance in escrow.",
+  orderCancelledDepositAltered:
+    "❌ *Order cancelled*\n\nThe deposit was altered on the network before being confirmed. The agreement has been aborted for your safety.",
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *Escrow Funded and Confirmed!*\n\n` +
     `The funds are secured in the smart contract.\n\n` +
@@ -305,10 +332,13 @@ export default {
   errorProcessingTx: (err: string) => `❌ *Network error:*\n\`${err}\``,
 
   // ─────────────────────────── Fiat & Release ───────────────────────────
-  selectReleasableOrder: "👇 Select the order from which you want to release the Bitcoin funds:",
-  noReleasableOrdersFound: "📭 You have no pending orders to release.\n\nYou must wait for the buyer to make the payment and confirm it using `/fiatsent`.",
+  selectReleasableOrder:
+    "👇 Select the order from which you want to release the Bitcoin funds:",
+  noReleasableOrdersFound:
+    "📭 You have no pending orders to release.\n\nYou must wait for the buyer to make the payment and confirm it using `/fiatsent`.",
   selectOrderToMarkAsPaid: "👇 Select the order you want to mark as paid:",
-  noActiveOrdersFound: "📭 You have no active orders pending payment.\n\nYou must wait for the seller to deposit the funds into the vault or take a new offer.",
+  noActiveOrdersFound:
+    "📭 You have no active orders pending payment.\n\nYou must wait for the seller to deposit the funds into the vault or take a new offer.",
   fiatSentToBuyer: (orderId: string) =>
     `✅ You have marked order \`${orderId}\` as paid.\n\n` +
     `The seller has been notified. Please wait for them to confirm receipt in their account and release the funds.`,
@@ -333,7 +363,11 @@ export default {
     `🎉 *The seller has released the funds!*\n\n` +
     `The escrow is ready to be claimed. Run the following command to start the withdrawal to your wallet:\n\n` +
     `\`/claim ${orderId}\``,
-  rangeOrderPartiallyCompleted: (newOrderId: string, newAmountFiat: string, fiatCode: string) =>
+  rangeOrderPartiallyCompleted: (
+    newOrderId: string,
+    newAmountFiat: string,
+    fiatCode: string,
+  ) =>
     `ℹ️ Your range order has been partially completed. A new order (\`${newOrderId}\`) has been republished for the remaining balance: *${newAmountFiat} ${fiatCode}* in ${Strings.OrderChannelTag}.`,
 
   // --------------------------- Rating -----------------------------------
@@ -342,8 +376,10 @@ export default {
     `⭐ You have rated your counterpart with ${stars} stars.`,
 
   // ─────────────────────────── Claim & Refund ───────────────────────────
-  selectClaimableOrder: "👇 Select the order from which you want to claim the funds:",
-  noClaimableOrdersFound: "📭 You have no orders ready to be claimed or refunded.",
+  selectClaimableOrder:
+    "👇 Select the order from which you want to claim the funds:",
+  noClaimableOrdersFound:
+    "📭 You have no orders ready to be claimed or refunded.",
   askClaimPassword: (
     minerFee: number,
     finalAmount: number,
@@ -373,6 +409,8 @@ export default {
   cancelUnconfirmed: `⏳ The order has an unconfirmed transaction on the network. You must wait for 2 confirmation before initiating a cancellation.`,
   cancelAlreadyRequested: `⏳ You have already requested the cancellation. Waiting for your counterparty to accept and sign.`,
   cancelOnlySeller: `❌ Only the seller can cancel the order in this state.`,
+  cancelAddressWait:
+    "❌ You must wait at least 10 minutes after the address was generated before cancelling, to prevent collisions with transactions in transit.",
   counterpartyCanceledDeleted: (orderId: string) =>
     `🚫 Your counterparty has cancelled order \`${orderId}\`.`,
   matchCancelledRepublished: (orderId: string) =>

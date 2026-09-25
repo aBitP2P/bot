@@ -28,7 +28,7 @@ export default {
     `/setpass — Encripta tu perfil a partir de una contraseña\n` +
     `/setlang — Cambia de idioma\n` +
     "/fees - Revisa como están las comisiones para tus órdenes \n" +
-    "/setfee - Establece la comisión de red que se usará\n" + 
+    "/setfee - Establece la comisión de red que se usará\n" +
     `/exit — Cancelar la acción actual\n\n` +
     `📢 Canal: ${Strings.OrderChannelTag}\n` +
     `💬 Grupo: ${Strings.GeneralChatTag}`,
@@ -258,11 +258,38 @@ export default {
     `Por favor, envía \`${sats / 100_000_000}\` BTC a la siguiente dirección on-chain:\n\n` +
     `\`${address}\`\n\n` +
     `_Una vez se confirme la transacción (2 confirmaciones), los pondremos en contacto. Por favor, asegurate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
-  escrowUnconfirmed: (txid: string) =>
+  escrowUnconfirmed: (escrowAddress: string) =>
     `⏳ *Transacción detectada en la red.*\n\n` +
-    `ID: \`${txid}\`\n` +
-    `[Ver en el explorador](${mempoolBaseURL}/tx/${txid}) \n` +
+    `[Ver en el explorador](${mempoolBaseURL}/address/${escrowAddress}) \n` +
     `_Esperando 2 confirmaciones para poder proceder seguramente con la orden..._`,
+  escrowFundingFailed: (
+    utxoCount: number,
+    totalFundedSats: number,
+    expectedSats: number,
+    orderId: string,
+  ) =>
+    `❌ *Fondeo fallido*\n\nSe han detectado ${utxoCount} depósitos pero el monto sigue siendo inferior al esperado (${totalFundedSats / 100_000_000} BTC recibidos de ${expectedSats / 100_000_000} BTC requeridos). El límite máximo es de 2 transacciones.\n\nLa orden ha sido cancelada. Ejecuta \`/claim ${orderId}\` para solicitar el reembolso de tus fondos.`,
+  incompleteFunding: (
+    totalFundedSats: number,
+    expectedSats: number,
+    remainingSats: number,
+  ) =>
+    `⚠️ *Depósito incompleto*\n\nHemos detectado la llegada de ${totalFundedSats / 100_000_000} BTC, pero la orden requiere ${expectedSats / 100_000_000} BTC.\n\nFaltan por depositar: \`${remainingSats / 100_000_000}\` BTC.\n\n_Cuentas con 1 intento de envío adicional. Si el segundo depósito no completa la cantidad requerida, la orden se cancelará y pasará a reembolso._`,
+  fundingExpired:
+    "⚠️ Tu orden ha expirado por no completar el depósito a tiempo. Usa /claim para reembolsar los fondos parciales enviados.",
+  sellerDidNotFund: (orderId: string) =>
+    `⚠️ *El vendedor no depositó*\n\nEl usuario que tomó tu orden \`${orderId}\` no realizó el depósito en el tiempo establecido. Tu oferta ha sido republicada en el canal.`,
+  partialDepositCancelled:
+    "❌ Has cancelado la orden con un depósito parcial. Usa /claim para solicitar el reembolso de los fondos enviados.",
+  orderCancelledSellerFunding: `❌ *Orden cancelada*\n\nEl vendedor no completó el depósito correctamente dentro del límite de envíos permitidos. La orden ha sido cancelada automáticamente y los fondos le serán reembolsados a su dueño.`,
+  orderCancelledTransactionDisappeared:
+    "❌ *Orden cancelada*\n\nLa transacción ha desaparecido de la red (RBF o eliminada de la mempool).",
+  orderCancelledSellerDepositReverted:
+    "❌ *Orden cancelada*\n\nEl depósito del vendedor fue revertido o desapareció de la red.",
+  tamperingDetected:
+    "❌ *Manipulación detectada*\n\nSe detectó una reversión parcial de los fondos en la red. La orden ha sido cancelada. Ejecuta /claim para recuperar el saldo restante en el escrow.",
+  orderCancelledDepositAltered:
+    "❌ *Orden cancelada*\n\nEl depósito fue alterado en la red antes de confirmarse. El acuerdo ha sido abortado por tu seguridad.",
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *¡Escrow Fondeado y Confirmado!*\n\n` +
     `Los fondos están asegurados en el contrato inteligente.\n\n` +
@@ -308,10 +335,14 @@ export default {
   errorProcessingTx: (err: string) => `❌ *Error en la red:*\n\`${err}\``,
 
   // ─────────────────────────── Fiat & Release ───────────────────────────
-  selectReleasableOrder: "👇 Selecciona la orden de la cual deseas liberar los fondos en Bitcoin:",
-  noReleasableOrdersFound: "📭 No tienes órdenes pendientes por liberar.\n\nDebes esperar a que el comprador realice el pago y lo confirme usando `/fiatsent`.",
-  selectOrderToMarkAsPaid: "👇 Selecciona la orden que deseas marcar como pagada:",
-  noActiveOrdersFound: "📭 No tienes órdenes activas pendientes de pago.\n\nDebes esperar a que el vendedor deposite los fondos en la bóveda o tomar una nueva oferta.",
+  selectReleasableOrder:
+    "👇 Selecciona la orden de la cual deseas liberar los fondos en Bitcoin:",
+  noReleasableOrdersFound:
+    "📭 No tienes órdenes pendientes por liberar.\n\nDebes esperar a que el comprador realice el pago y lo confirme usando `/fiatsent`.",
+  selectOrderToMarkAsPaid:
+    "👇 Selecciona la orden que deseas marcar como pagada:",
+  noActiveOrdersFound:
+    "📭 No tienes órdenes activas pendientes de pago.\n\nDebes esperar a que el vendedor deposite los fondos en la bóveda o tomar una nueva oferta.",
   fiatSentToBuyer: (orderId: string) =>
     `✅ Has marcado la orden \`${orderId}\` como pagada.\n\n` +
     `El vendedor ha sido notificado. Por favor espera a que confirme la recepción en su cuenta y libere los fondos.`,
@@ -349,8 +380,10 @@ export default {
     `⭐ Has calificado a tu contraparte con ${stars} estrellas.`,
 
   // ─────────────────────────── Claim & Refund ───────────────────────────
-  selectClaimableOrder: "👇 Selecciona la orden de la cual deseas reclamar los fondos:",
-  noClaimableOrdersFound: "📭 No tienes órdenes listas para retirar o reembolsar.",
+  selectClaimableOrder:
+    "👇 Selecciona la orden de la cual deseas reclamar los fondos:",
+  noClaimableOrdersFound:
+    "📭 No tienes órdenes listas para retirar o reembolsar.",
   askClaimPassword: (
     minerFee: number,
     finalAmount: number,
@@ -380,6 +413,8 @@ export default {
   cancelUnconfirmed: `⏳ La orden tiene una transacción sin confirmar en la red. Debes esperar 2 confirmaciones antes de iniciar una cancelación.`,
   cancelAlreadyRequested: `⏳ Ya solicitaste la cancelación. Esperando a que tu contraparte acepte y firme.`,
   cancelOnlySeller: `❌ Solo el vendedor puede cancelar la orden en este estado.`,
+  cancelAddressWait:
+    "❌ Debes esperar al menos 10 minutos desde que se generó la dirección antes de cancelar, para prevenir colisiones con transacciones en tránsito.",
   counterpartyCanceledDeleted: (orderId: string) =>
     `🚫 Tu contraparte ha cancelado la orden \`${orderId}\`.`,
   matchCancelledRepublished: (orderId: string) =>

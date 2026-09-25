@@ -4,7 +4,7 @@ import * as ecc from "tiny-secp256k1";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { counters } from "../../db/schema.js";
-import { network, getMempoolApiPath } from "./network.js";
+import { network, fetchMempool } from "./network.js";
 
 const bip32 = BIP32Factory(ecc);
 
@@ -54,14 +54,14 @@ export async function getLiveMinerFee(params: {
     let feeRate = params.customFeeRate;
 
     if (!feeRate) {
-      const feeRes = await fetch(getMempoolApiPath("v1/fees/recommended"));
+      const feeRes = await fetchMempool("v1/fees/recommended");
       const fees = await feeRes.json();
       feeRate = fees.economyFee;
     }
 
     let utxoCount = params.customUtxosCount || 1;
     if (params.escrowAddress) {
-      const utxoRes = await fetch(getMempoolApiPath(`/address/${params.escrowAddress}/utxo`));
+      const utxoRes = await fetchMempool(`/address/${params.escrowAddress}/utxo`);
       utxoCount = (await utxoRes.json()).length || 1;
     }
 
@@ -78,7 +78,7 @@ export async function getLiveMinerFee(params: {
 
 export async function getLiveMinerFeeList(): Promise<MempoolFeesData | null> {
   try {
-    const feeRes = await fetch(getMempoolApiPath("v1/fees/recommended"));
+    const feeRes = await fetchMempool("v1/fees/recommended");
     const fees = await feeRes.json();
     return fees as MempoolFeesData;
   } catch (error) {

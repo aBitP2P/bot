@@ -8,11 +8,7 @@ import {
   type OrderRecord,
 } from "../types.js";
 import { getUser } from "../db/users.js";
-import {
-  type Language,
-  getUserDict,
-  t,
-} from "../locales/index.js";
+import { type Language, getUserDict, t } from "../locales/index.js";
 import { Markup, Telegraf } from "telegraf";
 import { initializeEscrow } from "./escrowHandler.js";
 import {
@@ -103,7 +99,10 @@ export async function handleOrderCancelledRepublish(
 ) {
   const didReset = await tryTransitionOrderStatus(
     orderId,
-    [OrderStatus.WaitingTakerConfirmation, OrderStatus.WaitingMakerConfirmation],
+    [
+      OrderStatus.WaitingTakerConfirmation,
+      OrderStatus.WaitingMakerConfirmation,
+    ],
     OrderStatus.Pending,
     {
       takerId: null,
@@ -260,16 +259,38 @@ export async function proceedAfterTakerAmount(
   ctx: BotContext,
   order: OrderRecord,
 ) {
+  let baseSats = 0;
+  try {
+    const rateInfo = await getRateInfoFor(
+      order.fiatAmountLocked!,
+      order.fiatCode,
+      order.margin,
+    );
+    baseSats = rateInfo.satsAmount;
+  } catch (error) {
+    return handleOrderCancelledRepublish(
+      ctx,
+      order.id,
+      ctx.dict.priceApiErrorRepublish,
+    );
+  }
+
+  await db
+    .update(orders)
+    .set({
+      takerId: ctx.user.telegramId,
+      amountSats: baseSats,
+    })
+    .where(eq(orders.id, order.id));
+
+  order.amountSats = baseSats;
+
   const dict = ctx.dict;
   const isTakerBuyer = order.type === "SELL";
 
   if (isTakerBuyer) {
     ctx.session.awaitingAddressForOrder = order.id;
-    const estimatedSats = await estimateBuyerSats({
-      fiatAmountLocked: order.fiatAmountLocked!,
-      fiatCode: order.fiatCode,
-      margin: order.margin,
-    });
+    const estimatedSats = estimateBuyerSats(baseSats);
     if (estimatedSats === 0) {
       ctx.session.awaitingAddressForOrder = undefined;
       return handleOrderCancelledRepublish(
@@ -291,30 +312,11 @@ export async function proceedAfterTakerAmount(
   }
 }
 
-async function estimateBuyerSats({
-  fiatAmountLocked,
-  fiatCode,
-  margin,
-}: {
-  fiatAmountLocked: number;
-  fiatCode: string;
-  margin: number;
-}): Promise<number> {
-  try {
-    const { satsAmount: baseSats } = await getRateInfoFor(
-      fiatAmountLocked,
-      fiatCode,
-      margin,
-    );
-    const botFeePercent = getBotFeePercent(baseSats);
-    const totalBotFeeSats = Math.floor(
-      baseSats * (botFeePercent / 100),
-    );
-    const partyFeeSats = Math.floor(totalBotFeeSats / 2);
-    return baseSats - partyFeeSats;
-  } catch (error) {
-    return 0;
-  }
+function estimateBuyerSats(baseSats: number): number {
+  const botFeePercent = getBotFeePercent(baseSats);
+  const totalBotFeeSats = Math.floor(baseSats * (botFeePercent / 100));
+  const partyFeeSats = Math.floor(totalBotFeeSats / 2);
+  return baseSats - partyFeeSats;
 }
 
 export async function notifyMakerForConfirmation(
@@ -377,11 +379,7 @@ export async function handleMakerConfirm(
 
   if (isMakerBuyer) {
     ctx.session.awaitingAddressForOrder = orderId;
-    const estimatedSats = await estimateBuyerSats({
-      fiatAmountLocked: order.fiatAmountLocked!,
-      fiatCode: order.fiatCode,
-      margin: order.margin,
-    });
+    const estimatedSats = estimateBuyerSats(order.amountSats);
 
     if (estimatedSats === 0) {
       ctx.session.awaitingAddressForOrder = undefined;
@@ -410,11 +408,14 @@ export async function handleMakerConfirm(
       getUserDict(taker?.language).acceptedNowWaitingEscrow,
       { parse_mode: "Markdown" },
     );
-    await db
-      .update(orders)
-      .set({ status: OrderStatus.WaitingEscrow })
-      .where(eq(orders.id, orderId));
+    const didTransition = await tryTransitionOrderStatus(
+      orderId,
+      [OrderStatus.WaitingMakerConfirmation],
+      OrderStatus.WaitingEscrow,
+    );
 
-    await initializeEscrow(ctx, orderId);
+    if (didTransition) {
+      await initializeEscrow(ctx, orderId);
+    }
   }
 }

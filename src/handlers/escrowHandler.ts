@@ -6,14 +6,13 @@ import { getUser } from "../db/users.js";
 import { getUserDict } from "../locales/index.js";
 import type { BotContext } from "../types.js";
 import { generateEscrow } from "../core/bitcoin/index.js";
-import { getRateInfoFor } from "../utils/price.js";
 import QRCode from "qrcode";
 import { getParties } from "../utils/order.js";
 import { getBotFeePercent } from "../config/fees.js";
 
 export async function initializeEscrow(ctx: BotContext, orderId: string) {
   const order = await getOrder(orderId);
-  if (!order) return;
+  if (!order || !order.amountSats) return;
 
   const { buyerId, sellerId } = getParties(order);
 
@@ -33,12 +32,7 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
     order.id,
   );
 
-  const fiatAmount = order.fiatAmountLocked!;
-  const { satsAmount: baseSats } = await getRateInfoFor(
-    fiatAmount,
-    order.fiatCode,
-    order.margin,
-  );
+  const baseSats = order.amountSats;
 
   const botFeePercent = getBotFeePercent(baseSats);
   const sellerFeeSats = Math.floor(baseSats * (botFeePercent / 2 / 100));
@@ -62,8 +56,6 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
       sellerPubkey,
       escrowAddress: address,
       witnessScript: witnessScript,
-      amountSats: baseSats,
-      fiatAmountLocked: fiatAmount,
     })
     .where(eq(orders.id, orderId));
 

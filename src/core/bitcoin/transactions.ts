@@ -1,5 +1,5 @@
 import * as bitcoin from "bitcoinjs-lib";
-import { network, getMempoolApiPath } from "./network.js";
+import { network, fetchMempool } from "./network.js";
 import { ECPair, deriveOrderBotKeypair } from "./wallet.js";
 import {
   getLiveMinerFee,
@@ -15,9 +15,7 @@ async function buildBasePsbt(order: OrderRecord, signerWif: string) {
   const signerKeypair = ECPair.fromWIF(signerWif, network);
   const escrowBotKeypair = deriveOrderBotKeypair(order.id);
 
-  const utxosRes = await fetch(
-    getMempoolApiPath(`address/${order.escrowAddress}/utxo`),
-  );
+  const utxosRes = await fetchMempool(`address/${order.escrowAddress}/utxo`);
   const utxos = await utxosRes.json();
   if (!utxos || utxos.length === 0)
     throw new Error("No hay fondos en el Escrow.");
@@ -55,18 +53,19 @@ export async function checkEscrowFunding(
   address: string,
   currentHeight?: number,
   requiredConf: number = 2,
-) {
+): Promise<{ totalFundedSats: number, confirmed: boolean, utxoCount: number } | null> {
   try {
-    const res = await fetch(getMempoolApiPath(`address/${address}/utxo`), {
+    const res = await fetchMempool(`address/${address}/utxo`, {
       cache: "no-store",
     });
     if (!res.ok) return null;
     const utxos = await res.json();
-    if (utxos.length === 0) return null;
+    
+    if (utxos.length === 0) return { totalFundedSats: 0, confirmed: false, utxoCount: 0 };
 
     let height = currentHeight;
     if (height === undefined) {
-      const tipRes = await fetch(getMempoolApiPath("blocks/tip/height"), {
+      const tipRes = await fetchMempool("blocks/tip/height", {
         cache: "no-store",
       });
       if (!tipRes.ok) return null;
@@ -84,7 +83,7 @@ export async function checkEscrowFunding(
       return confs >= requiredConf;
     });
 
-    return { totalFundedSats, confirmed, txid: utxos[0].txid };
+    return { totalFundedSats, confirmed, utxoCount: utxos.length };
   } catch (error) {
     return null;
   }
@@ -170,7 +169,7 @@ export async function broadcastRefundTx(
 }
 
 async function executeBroadcast(txHex: string): Promise<string> {
-  const res = await fetch(getMempoolApiPath("/tx"), {
+  const res = await fetchMempool("/tx", {
     method: "POST",
     body: txHex,
   });

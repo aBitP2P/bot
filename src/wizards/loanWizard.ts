@@ -5,8 +5,9 @@ import { createLoan, getLoansCreatedBy } from "../db/loans.js";
 import { generateOrderId } from "../utils/crypto.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
 import { LoanStatus } from "../shared/constants.js";
-import { ratesCache } from "../utils/price.js";
 import { Markup } from "telegraf";
+import { processLoanAPR, processLoanDuration } from "./loanSteps.js";
+import { processFiatAmount, processFiatCode } from "./sharedSteps.js";
 
 const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -127,143 +128,48 @@ export async function handleLoanWizardInput(ctx: BotContext): Promise<boolean> {
 
   switch (step) {
     case "WAITING_LOAN_FIAT": {
-      const fiat = text.toUpperCase();
-      if (!/^[A-Z]{3}$/.test(fiat)) {
-        await updatePreview(
-          "WAITING_LOAN_FIAT",
-          undefined,
-          ctx.dict.invalidFiatCode,
-        );
+      const res = await processFiatCode(ctx.text!, ctx.dict);
+      if (!res.success) {
+        await updatePreview("WAITING_LOAN_FIAT", undefined, res.error);
         return true;
       }
-
-      try {
-        if (!ratesCache.has(fiat)) {
-          const res = await fetch(`https://api.yadio.io/rate/${fiat}/BTC`);
-          if (!res.ok || !(await res.json()).rate) {
-            await updatePreview(
-              "WAITING_LOAN_FIAT",
-              undefined,
-              ctx.dict.invalidFiatCode,
-            );
-            return true;
-          }
-        }
-      } catch (error) {
-        await updatePreview(
-          "WAITING_LOAN_FIAT",
-          undefined,
-          ctx.dict.couldNotFetchPrice,
-        );
-        return true;
-      }
-
-      ctx.session.loanDraft!.fiat = fiat;
+      ctx.session.loanDraft!.fiat = res.fiatCode!;
       ctx.session.step = "WAITING_LOAN_AMOUNT";
       await updatePreview("WAITING_LOAN_AMOUNT");
       return true;
     }
 
     case "WAITING_LOAN_AMOUNT": {
-      if (!text || !/^(\d+([.,]\d{1,2})?)(-(\d+([.,]\d{1,2})?))?$/.test(text))
-        return true;
-
-      const parts = text.split("-");
-      const amounts = parts.map((p) => Number(p.replace(",", ".")));
-
-      if (amounts.some((a) => !isFinite(a) || a > Number.MAX_SAFE_INTEGER)) {
-        await updatePreview(
-          "WAITING_LOAN_AMOUNT",
-          undefined,
-          ctx.dict.fiatValueTooBig,
-        );
+      const { success, error, amount } = processFiatAmount(ctx.text!, ctx.dict);
+      if (!success) {
+        await updatePreview("WAITING_LOAN_AMOUNT", undefined, error);
         return true;
       }
-
-      const [min, max] = amounts as [number, number?];
-      if (max !== undefined) {
-        if (min > max) return true;
-        if (min === max) {
-          ctx.session.loanDraft!.amount = `${min}`;
-        } else {
-          ctx.session.loanDraft!.amount = `${min}-${max}`;
-        }
-      } else {
-        ctx.session.loanDraft!.amount = `${min}`;
-      }
-
       ctx.session.step = "WAITING_LOAN_APR";
+      ctx.session.loanDraft!.amount = amount!;
       await updatePreview("WAITING_LOAN_APR");
       return true;
     }
 
     case "WAITING_LOAN_APR": {
-      const cleanAprText = text.replace("%", "");
-      const apr = parseFloat(cleanAprText);
-
-      if (isNaN(apr) || apr <= 0 || apr > 100) {
-        await updatePreview(
-          "WAITING_LOAN_APR",
-          undefined,
-          ctx.dict.invalidLoanAPR,
-        );
-        return true;
+      const { success, data, error } = processLoanAPR(ctx);
+      if (!success) {
+        await updatePreview("WAITING_LOAN_APR", undefined, error);
+        return true
       }
-
-      ctx.session.loanDraft!.apr = apr;
+      ctx.session.loanDraft!.apr = data!.apr;
       ctx.session.step = "WAITING_LOAN_LTV";
-
-      const ltvKeyboard = Markup.inlineKeyboard([
-        [
-          Markup.button.callback("30%", "ltv_30"),
-          Markup.button.callback("40%", "ltv_40"),
-          Markup.button.callback("50%", "ltv_50"),
-        ],
-        [
-          Markup.button.callback("60%", "ltv_60"),
-          Markup.button.callback("70%", "ltv_70"),
-          Markup.button.callback("80%", "ltv_80"),
-        ],
-      ]);
-
-      await updatePreview("WAITING_LOAN_LTV", ltvKeyboard);
+      await updatePreview("WAITING_LOAN_LTV", data!.keyboard);
       return true;
     }
 
     case "WAITING_LOAN_DURATION": {
-      if (!text || !/^(\d+)(-(\d+))?$/.test(text)) {
-        await updatePreview(
-          "WAITING_LOAN_DURATION",
-          undefined,
-          ctx.dict.invalidLoanDuration,
-        );
-        return true;
+      let { success, error, duration } = processLoanDuration(ctx);
+      if (!success) {
+        await updatePreview("WAITING_LOAN_DURATION", undefined, error);
+        return true
       }
-
-      const parts = text.split("-");
-      const durations = parts.map((p) => parseInt(p, 10));
-
-      if (durations.some((d) => isNaN(d) || d < 1 || d > 120)) {
-        await updatePreview(
-          "WAITING_LOAN_DURATION",
-          undefined,
-          ctx.dict.invalidLoanDuration,
-        );
-        return true;
-      }
-
-      const [dMin, dMax] = durations as [number, number?];
-      if (dMax !== undefined) {
-        if (dMin > dMax) return true;
-        if (dMin === dMax) {
-          ctx.session.loanDraft!.durationMonths = `${dMin}`;
-        } else {
-          ctx.session.loanDraft!.durationMonths = `${dMin}-${dMax}`;
-        }
-      } else {
-        ctx.session.loanDraft!.durationMonths = `${dMin}`;
-      }
-
+      ctx.session.loanDraft!.durationMonths = duration!;
       ctx.session.step = "WAITING_LOAN_PAYMENT_METHOD";
       await updatePreview("WAITING_LOAN_PAYMENT_METHOD");
       return true;

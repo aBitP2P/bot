@@ -10,10 +10,12 @@ import {
   buildMarginKeyboard,
   buildTakeOrderKeyboard,
 } from "../shared/keyboards.js";
-import { getMinFiatAmount, getRateInfoFor, MIN_SATS, ratesCache } from "../utils/price.js";
+import { getRateInfoFor, MIN_SATS } from "../utils/price.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { generateOrderId } from "../utils/crypto.js";
 import { safeDeleteMsg, safeRemoveMarkup } from "../utils/telegram.js";
+import { processFiatAmount, processFiatCode } from "./sharedSteps.js";
+import { validateOrderMinimumAmount } from "./orderSteps.js";
 
 const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -129,82 +131,32 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
   switch (step) {
     case "WAITING_FIAT":
-      const f = text.trim().toUpperCase();
-
-      if (!/^[A-Z]{3}$/.test(f)) {
-        await updatePreview("WAITING_FIAT", null, ctx.dict.invalidFiatCode);
+      const res = await processFiatCode(text, ctx.dict);
+      if (!res.success) {
+        await updatePreview("WAITING_FIAT", null, res.error);
         return true;
       }
-
-      try {
-        if (!ratesCache.has(f)) {
-          const res = await fetch(`https://api.yadio.io/rate/${f}/BTC`);
-          if (!res.ok || !(await res.json()).rate) {
-            await updatePreview("WAITING_FIAT", null, ctx.dict.invalidFiatCode);
-            return true;
-          }
-        }
-      } catch (error) {
-        await updatePreview("WAITING_FIAT", null, ctx.dict.couldNotApplyMargin);
-        return true;
-      }
-
-      ctx.session.draft.fiat = f.toUpperCase();
+      ctx.session.draft.fiat = res.fiatCode!;
       ctx.session.step = "WAITING_AMOUNT";
       await updatePreview("WAITING_AMOUNT");
       return true;
 
     case "WAITING_AMOUNT":
-      if (!text || !/^(\d+([.,]\d{1,2})?)(-(\d+([.,]\d{1,2})?))?$/.test(text))
-        return true;
-
-      const parts = text.split("-");
-      const amounts = parts.map((p) => {
-        const num = Number(p.replace(",", "."));
-        return num;
-      });
-
-      let isFiatBig = amounts.some(
-        (amount) => !isFinite(amount) || amount > Number.MAX_SAFE_INTEGER,
-      );
-      if (isFiatBig) {
-        await updatePreview(
-          "WAITING_AMOUNT",
-          undefined,
-          ctx.dict.fiatValueTooBig,
-        );
+      const { success, error, amount } = processFiatAmount(text, ctx.dict);
+      if (!success) {
+        await updatePreview("WAITING_AMOUNT", undefined, error);
         return true;
       }
 
-      const [min, max] = amounts as [number, number?];
-      if (max !== undefined && min >= max) return true;
-
-      let appliedRate: number;
-      try {
-        const rateInfo = await getRateInfoFor(min, ctx.session.draft.fiat!, 0);
-        appliedRate = rateInfo.appliedRate;
-      } catch (e) {
-        await updatePreview("WAITING_AMOUNT", undefined, ctx.dict.couldNotFetchPrice);
+      const limitCheck = await validateOrderMinimumAmount(amount!, ctx.session.draft.fiat!, ctx.dict);
+      if (!limitCheck.success) {
+        await updatePreview("WAITING_AMOUNT", undefined, limitCheck.error);
         return true;
       }
 
-      const minFiatValue = getMinFiatAmount(appliedRate);
-      if (min < minFiatValue) {
-        await updatePreview(
-          "WAITING_AMOUNT",
-          undefined,
-          ctx.dict.fiatValueBelowMinimun(ctx.session.draft.fiat!, minFiatValue),
-        );
-        return true;
-      }
-
-      ctx.session.draft.amount = text.replaceAll(",", ".");
+      ctx.session.draft.amount = amount!;
       ctx.session.step = "WAITING_MARGIN";
-
-      await updatePreview(
-        "WAITING_MARGIN",
-        buildMarginKeyboard(ctx.dict.marketPrice),
-      );
+      await updatePreview("WAITING_MARGIN", buildMarginKeyboard(ctx.dict.marketPrice));
       return true;
 
     case "WAITING_PAYMENT_METHOD":

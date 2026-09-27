@@ -5,15 +5,18 @@ import {
 } from "../db/orders.js";
 import { getUser } from "../db/users.js";
 import { getUserDict } from "../locales/index.js";
-import type { CallbackContext, CommandContext } from "../types.js";
+import type { CallbackContext, CommandContext, LoanRecord } from "../types.js";
 import { handleOrderCancelledRepublish } from "../handlers/orderHandler.js";
-import { OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
+import { LoanStatus, OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { checkEscrowFunding } from "../core/bitcoin/transactions.js";
-import { getParties } from "../utils/order.js";
+import { getLoanParties, getParties } from "../utils/parties.js";
 import { getBotFeePercent } from "../config/fees.js";
+import { getLoan, getUserLoans, tryTransitionLoanStatus } from "../db/loans.js";
+import { republishLoanSilently } from "../handlers/loanHandler.js";
 
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
+const LOAN_CHANNEL_ID = process.env.LOAN_CHANNEL_ID!;
 
 export async function cancelCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -21,16 +24,185 @@ export async function cancelCommand(ctx: CommandContext) {
 
   const args = ctx.message.text.split(" ");
   if (args.length < 2) {
-    let userOrders = await getUserOrders(userId);
-    if (userOrders.length === 0) return ctx.reply(dict.noOrdersFound);
+    const userOrders = await getUserOrders(userId);
+    const userLoans = await getUserLoans(userId);
+    const combined = [...userOrders, ...userLoans];
+
+    if (combined.length === 0) return ctx.reply(dict.noOrdersFound);
+    
     await ctx.reply(dict.selectOrderToCancel, {
-      ...buildOrderSelectKeyboard(userOrders, "cancelCommand"),
+      ...buildOrderSelectKeyboard(combined, "cancelCommand"),
     });
     return;
   }
 
-  const orderId = args[1] as string;
-  return await handleOrderCancelFromCommand(ctx, orderId);
+  const id = args[1] as string;
+  return await routeCancel(ctx, id);
+}
+
+export async function routeCancel(ctx: CommandContext | CallbackContext, id: string) {
+  const order = await getOrder(id);
+  if (order) return await handleOrderCancelFromCommand(ctx, id);
+
+  const loan = await getLoan(id);
+  if (loan) return await handleLoanCancelFromCommand(ctx, loan);
+
+  return ctx.reply(ctx.dict.orderNotFound);
+}
+
+export async function handleLoanCancelFromCommand(
+  ctx: CommandContext | CallbackContext,
+  loanOrId: string | LoanRecord
+) {
+
+  const userId = ctx.from!.id;
+  const dict = ctx.dict;
+  
+  const loan = typeof loanOrId === "string" ? await getLoan(loanOrId) : loanOrId;
+  if (!loan) return ctx.reply(dict.orderNotFound);
+
+  const TERMINAL_LOAN_STATUSES = [
+    LoanStatus.Completed, LoanStatus.Cancelled, LoanStatus.Refunded, 
+    LoanStatus.Liquidated, LoanStatus.Liquidatable, LoanStatus.Dispute
+  ];
+  if (TERMINAL_LOAN_STATUSES.includes(loan.status as any)) {
+    return ctx.reply(dict.cancelNotAllowed);
+  }
+
+  const { borrowerId } = getLoanParties(loan);
+  const counterpartyId = userId === loan.creatorId ? loan.takerId : loan.creatorId;
+
+  switch (loan.status) {
+    case LoanStatus.Pending: {
+      if (loan.creatorId !== userId) return ctx.reply(dict.unauthorizedAccess);
+
+      const didCancel = await tryTransitionLoanStatus(loan.id, [LoanStatus.Pending], LoanStatus.Cancelled);
+      if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
+
+      if (loan.channelMessageId) {
+        try {
+          await ctx.telegram.deleteMessage(LOAN_CHANNEL_ID, loan.channelMessageId);
+        } catch (e) {}
+      }
+      return ctx.reply(dict.orderCancelled);
+    }
+
+    case LoanStatus.WaitingTakerConfirmation:
+    case LoanStatus.WaitingMakerConfirmation: {
+      const isOriginalCreator = userId === loan.creatorId;
+
+      if (isOriginalCreator) {
+        const didCancel = await tryTransitionLoanStatus(loan.id, [loan.status], LoanStatus.Cancelled);
+        if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
+
+        if (counterpartyId) {
+          const cDict = getUserDict((await getUser(counterpartyId))?.language);
+          await ctx.telegram.sendMessage(counterpartyId, cDict.counterpartyCanceledDeleted(loan.id), { parse_mode: "Markdown" });
+        }
+        return ctx.reply(dict.orderCancelled);
+      } else {
+        const didReset = await tryTransitionLoanStatus(loan.id, [loan.status], LoanStatus.Pending, { 
+          takerId: null, borrowerAddress: null, lenderAddress: null, cancelRequestedBy: null 
+        });
+        if (!didReset) return ctx.reply(dict.cancelNotAllowed);
+
+        if (counterpartyId) {
+          const cDict = getUserDict((await getUser(counterpartyId))?.language);
+          await ctx.telegram.sendMessage(counterpartyId, cDict.matchCancelledRepublished(loan.id), { parse_mode: "Markdown" });
+        }
+        
+        ctx.callbackQuery ? await ctx.editMessageText(dict.orderCancelled) : await ctx.reply(dict.orderCancelled);
+        
+        republishLoanSilently(ctx, loan.id);
+        return;
+      }
+    }
+
+    case LoanStatus.WaitingCollateral: {
+      if (userId !== borrowerId) return ctx.reply(dict.loanCancelOnlyBorrower);
+
+      const TIME_LOCK_MS = 10 * 60 * 1000;
+      if (Date.now() - loan.updatedAt! < TIME_LOCK_MS) return ctx.reply(dict.cancelAddressWait);
+
+      if (loan.escrowAddress) {
+        const funding = await checkEscrowFunding(loan.escrowAddress);
+        if (funding && funding.totalFundedSats > 0) {
+          if (funding.totalFundedSats < loan.collateralSats!) {
+            const didCancel = await tryTransitionLoanStatus(loan.id, [LoanStatus.WaitingCollateral], LoanStatus.Refundable);
+            if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
+
+            if (counterpartyId) {
+              const cDict = getUserDict((await getUser(counterpartyId))?.language);
+              await ctx.telegram.sendMessage(counterpartyId, cDict.counterpartyCanceledDeleted(loan.id), { parse_mode: "Markdown" });
+            }
+            return ctx.reply(dict.partialDepositCancelled);
+          } else {
+            return ctx.reply(dict.cancelUnconfirmed);
+          }
+        }
+      }
+
+      const didCancel = await tryTransitionLoanStatus(loan.id, [LoanStatus.WaitingCollateral], LoanStatus.Cancelled);
+      if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
+
+      if (counterpartyId) {
+        const cDict = getUserDict((await getUser(counterpartyId))?.language);
+        await ctx.telegram.sendMessage(counterpartyId, cDict.counterpartyCanceledDeleted(loan.id), { parse_mode: "Markdown" });
+      }
+      return ctx.reply(dict.orderCancelled);
+    }
+
+    case LoanStatus.CollateralUnconfirmed:
+      return ctx.reply(dict.cancelUnconfirmed);
+
+    case LoanStatus.WaitingDisbursement: {
+      const didRequest = await tryTransitionLoanStatus(
+        loan.id, 
+        [LoanStatus.WaitingDisbursement], 
+        LoanStatus.CancelRequested, 
+        { cancelRequestedBy: userId }
+      );
+      if (!didRequest) return ctx.reply(dict.cancelNotAllowed);
+
+      await ctx.reply(dict.cancelRequestSuccess);
+
+      if (counterpartyId) {
+        const cDict = getUserDict((await getUser(counterpartyId))?.language);
+        await ctx.telegram.sendMessage(counterpartyId, cDict.cancelNotifiedCounterparty(loan.id), { parse_mode: "Markdown" });
+      }
+      return;
+    }
+
+    case LoanStatus.CancelRequested: {
+      const requesterId = loan.cancelRequestedBy;
+      if (requesterId === userId) return ctx.reply(dict.cancelAlreadyRequested);
+
+      const didConfirm = await tryTransitionLoanStatus(
+        loan.id, 
+        [LoanStatus.CancelRequested], 
+        LoanStatus.Refundable, 
+        { cancelRequestedBy: null }
+      );
+      if (!didConfirm) return ctx.reply(dict.cancelNotAllowed);
+
+      await ctx.reply(userId === borrowerId ? dict.cancelAcceptedSeller(loan.id) : dict.cancelAccepted(loan.id), { parse_mode: "Markdown" });
+
+      if (requesterId) {
+        const rDict = getUserDict((await getUser(requesterId))?.language);
+        await ctx.telegram.sendMessage(requesterId, requesterId === borrowerId ? rDict.cancelAcceptedSeller(loan.id) : rDict.cancelAccepted(loan.id), { parse_mode: "Markdown" });
+      }
+      return;
+    }
+
+    case LoanStatus.DisbursementSent:
+    case LoanStatus.Active:
+    case LoanStatus.RepaymentSent:
+      return ctx.reply(dict.cancelLoanForbidden, { parse_mode: "Markdown" });
+
+    default:
+      return ctx.reply(dict.cancelNotAllowed);
+  }
+
 }
 
 export async function handleOrderCancelFromCommand(
@@ -145,7 +317,6 @@ export async function handleOrderCancelFromCommand(
       const isOriginalCreator = userId === order.creatorId;
 
       if (isOriginalCreator) {
-        // El creador retira su propia oferta: cancelación terminal, sin republicar.
         const didCancel = await tryTransitionOrderStatus(
           orderId,
           [order.status],

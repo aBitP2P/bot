@@ -12,7 +12,7 @@ import { generateVerificationCode } from "../utils/crypto.js";
 import { isAdmin } from "../utils/admin.js";
 import { buildSettleDisputeKeyboard } from "../shared/keyboards.js";
 import { escapeMarkdown } from "../utils/format.js";
-import { getParties } from "../utils/order.js";
+import { getParties } from "../utils/parties.js";
 import { safeRemoveMarkup } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
 

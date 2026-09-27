@@ -8,7 +8,7 @@ import type { CallbackContext, CommandContext } from "../types.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { OrderStatus } from "../shared/constants.js";
-import { getParties } from "../utils/order.js";
+import { getParties } from "../utils/parties.js";
 
 export async function fiatsentCommand(ctx: CommandContext) {
   const userId = ctx.from.id;

@@ -6,6 +6,9 @@ import {
 } from "../shared/constants.js";
 import { mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
 import { MIN_SATS } from "../utils/price.js";
+import type { LoanDraft } from "../wizards/types.js";
+import type { UserRecord } from "../types.js";
+import { escapeMarkdown } from "../utils/format.js";
 
 type OrderRow = typeof orders.$inferSelect;
 
@@ -567,4 +570,80 @@ export default {
     "❌ Ya tienes una orden en proceso. Debes terminarla o cancelarla antes de tomar otra.",
   invalidCustomFee:
     "❌ El valor debe ser igual o mayor a 0.8, menor a 20 y tener hasta 2 decimales.",
+
+  // ─────────────────────────── Loans ───────────────────────────
+  lendType: "🟢 Prestando",
+  borrowType: "🔴 Pidiendo prestado",
+  loanWizardPreview: (
+    type: string, // "🔴 Pidiendo prestado" o "🟢 Prestando"
+    fiat: string,
+    amount: string,
+    apr: string,
+    ltv: string,
+    duration: string,
+    method: string,
+    prompt: string,
+  ) =>
+    `🏦 *Estructurando Préstamo (${type})*\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💵 **Capital (FIAT):** \`${amount} ${fiat}\`\n` +
+    `🛡️ **Garantía (LTV):** \`${ltv}\`\n` +
+    `📈 **Tasa Anual (APR):** \`${apr}\`\n` +
+    `⏳ **Duración:** \`${duration} mes(es)\`\n` +
+    `🏦 **Método de pago:** \`${method}\`\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💡 _Para abortar el proceso escribe /exit_\n\n` +
+    `👉 *${prompt}*`,
+  channelLoanOffer: ({
+    action,
+    draft,
+    user,
+    loanId,
+  }: {
+    action: string;
+    draft: LoanDraft;
+    user: UserRecord;
+    loanId: string;
+  }) => {
+    const daysUsing = Math.floor((Date.now() - user.createdAt) / 86400000);
+    const hashtag = `#LOAN${draft.fiat}`;
+    const method = escapeMarkdown(draft.paymentMethod || "");
+
+    return (
+      `**${action}**\n\n` +
+      `Por ${draft.amount} ${draft.fiat}${getFiatEmoji(draft.fiat!)}\n` +
+      `💳 Método: ${method}\n` +
+      `⏳ Plazo: ${draft.durationMonths} meses\n` +
+      `📈 APR (Tasa Anual): ${draft.apr}%\n` +
+      `🛡️ LTV (Garantía): ${draft.ltv}%\n\n` +
+      `🤝 Tiene ${user.tradesCount} operaciones exitosas\n` +
+      `⏳ Usa el bot hace ${daysUsing} días\n\n` +
+      `${hashtag}\n` +
+      `${user.rating.toFixed(1)} ${"⭐".repeat(Math.floor(user.rating))} (${user.ratingCount})\n\n` +
+      `\`${loanId}\``
+    );
+  },
+  loanPublishedSuccess: (loanId: string) =>
+    `✅ *Tu oferta de préstamo ha sido publicada en el canal.*\nTe notificaremos cuando alguien la tome.\n\nID: \`${loanId}\``,
+  actionLend: "🟢 Ofrece prestar",
+  actionBorrow: "🔴 Pidiendo prestado",
+  btnTakeLoanBorrow: "Pedir prestado",
+  btnTakeLoanLend: "Prestar",
+  invalidLoanDuration:
+    "❌ La duración debe ser un número entero (o rango, ej: 3-6) entre 1 y 60 meses. Intenta de nuevo:",
+  promptLoanLTV:
+    "🛡️ Selecciona el Loan-to-Value (LTV) 👇\n_Define cuánto colateral se exige. Ej: Con un LTV del 50%, un préstamo de $1,000 requerirá bloquear $2,000 en Bitcoin como garantía._",
+  promptLoanDuration: "Escribe la duración del contrato en **meses**:",
+  promptLoanPaymentMethod:
+    "Escribe el método para enviar/recibir el FIAT (Ej: Transferencia Bancaria, Zelle, etc.)",
+  promptLoanAPR:
+    "Escribe la Tasa de Interés Anual (APR) en porcentaje (Ej: 5, 8.5, 12):",
+
+  invalidLoanAPR:
+    "❌ El APR debe ser un número válido (mayor a 0 y menor a 100). Puedes usar decimales. Intenta de nuevo:",
+  maxLoansReached:
+    "❌ Haz alcanzado el límite de anuncios de préstamos publicados.",
+
+  cancelLoanForbidden: "❌ No puedes cancelar un préstamo una vez que el dinero FIAT ha sido enviado o el contrato está activo. Si hay un problema, debes abrir una disputa usando /dispute.",
+  loanCancelOnlyBorrower: "❌ Solo el prestatario puede cancelar el préstamo en este estado.",
 };

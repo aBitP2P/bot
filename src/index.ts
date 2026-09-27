@@ -49,7 +49,9 @@ import {
   claimRefundAddressStep,
 } from "./steps/index.js";
 import { resolveDispute } from "./handlers/disputeHandler.js";
-import { handleOrderCancelFromCommand } from "./commands/cancel.js";
+import {
+  routeCancel,
+} from "./commands/cancel.js";
 import { handleRating } from "./handlers/ratingHandler.js";
 import { OrderStatus, Strings } from "./shared/constants.js";
 import { handleSetLangAction } from "./commands/setlang.js";
@@ -57,6 +59,11 @@ import { markAsFiatSent } from "./commands/fiatsent.js";
 import { askReleaseConfirmation, doFundsRelease } from "./commands/release.js";
 import { initiateClaim } from "./commands/claim.js";
 import { safeRemoveMarkup } from "./utils/telegram.js";
+import {
+  handleLoanWizardAction,
+  handleLoanWizardInput,
+  startLoanWizard,
+} from "./wizards/loanWizard.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -76,6 +83,8 @@ bot.use((ctx, next) => {
 });
 bot.command("buy", (ctx) => startOrderWizard(ctx, "BUY"));
 bot.command("sell", (ctx) => startOrderWizard(ctx, "SELL"));
+bot.command("lend", (ctx) => startLoanWizard(ctx, "LEND"));
+bot.command("borrow", (ctx) => startLoanWizard(ctx, "BORROW"));
 bot.command("exit", (ctx) => cancelWizard(ctx));
 bot.command("setpass", async (ctx) => {
   if (ctx.user.pubkey !== null) return ctx.reply(ctx.dict.passwordAlreadySet);
@@ -129,9 +138,9 @@ bot.on("callback_query", async (ctx, next) => {
   }
 
   if (data.startsWith("cancelCommand_")) {
-    const orderId = data.replace("cancelCommand_", "");
+    const id = data.replace("cancelCommand_", "");
     await safeRemoveMarkup(ctx);
-    return handleOrderCancelFromCommand(ctx, orderId);
+    return routeCancel(ctx, id);
   }
 
   if (data.startsWith("fiatsentCommand_")) {
@@ -170,6 +179,10 @@ bot.on("callback_query", async (ctx, next) => {
     await ctx.editMessageText(ctx.dict.feeResetSuccess, {
       parse_mode: "Markdown",
     });
+  }
+
+  if (data.startsWith("ltv_")) {
+    return handleLoanWizardAction(ctx);
   }
 
   if (data.startsWith("maker_deny_")) {
@@ -266,7 +279,9 @@ bot.on(message("text"), async (ctx, next) => {
     return;
   }
 
-  if (ctx.session.step !== "IDLE") {
+  if (ctx.session.step.startsWith("WAITING_LOAN_")) {
+    return handleLoanWizardInput(ctx);
+  } else if (ctx.session.step !== "IDLE") {
     return handleWizardInput(ctx);
   }
 

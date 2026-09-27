@@ -17,7 +17,7 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { escapeMarkdown } from "../utils/format.js";
 import { OrderStatus } from "../shared/constants.js";
 import { Markup } from "telegraf";
-import { getParties } from "../utils/order.js";
+import { getParties } from "../utils/parties.js";
 import { generateOrderId } from "../utils/crypto.js";
 
 export async function releaseCommand(ctx: CommandContext) {

@@ -7,7 +7,7 @@ import { getUserDict } from "../locales/index.js";
 import type { BotContext } from "../types.js";
 import { generateEscrow } from "../core/bitcoin/index.js";
 import QRCode from "qrcode";
-import { getParties } from "../utils/order.js";
+import { getParties } from "../utils/parties.js";
 import { getBotFeePercent } from "../config/fees.js";
 
 export async function initializeEscrow(ctx: BotContext, orderId: string) {

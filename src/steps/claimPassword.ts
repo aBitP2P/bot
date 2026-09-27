@@ -9,7 +9,7 @@ import { decryptData } from "../utils/crypto.js";
 import { getUser } from "../db/users.js";
 import { getUserDict } from "../locales/index.js";
 import { OrderStatus } from "../shared/constants.js";
-import { getParties } from "../utils/order.js";
+import { getParties } from "../utils/parties.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
 
 export async function claimPasswordStep(ctx: CommandContext) {

@@ -20,6 +20,38 @@ export const OrderStatus = {
   Cancelled: "CANCELLED",
 } as const;
 
+export const LoanStatus = {
+  Pending: "PENDING", 
+  WaitingTakerConfirmation: "WAITING_TAKER_CONFIRMATION",
+  WaitingMakerConfirmation: "WAITING_MAKER_CONFIRMATION",
+  CancelRequested: "CANCEL_REQUESTED",
+
+  WaitingCollateral: "WAITING_COLLATERAL", 
+  CollateralUnconfirmed: "COLLATERAL_UNCONFIRMED", 
+
+  WaitingDisbursement: "WAITING_DISBURSEMENT", 
+  DisbursementSent: "DISBURSEMENT_SENT", 
+
+  Active: "ACTIVE", 
+
+  RepaymentSent: "REPAYMENT_SENT", 
+
+  Releasable: "RELEASABLE", 
+  Refundable: "REFUNDABLE", 
+  Liquidatable: "LIQUIDATABLE", 
+  
+  Completed: "COMPLETED", 
+  Liquidated: "LIQUIDATED", 
+  Refunded: "REFUNDED", 
+  Cancelled: "CANCELLED", 
+  Dispute: "DISPUTE", 
+} as const;
+
+export const LoanTypes = {
+  Lend: "LEND",
+  Borrow: "BORROW"
+}
+
 export const TERMINAL_STATUSES = [
   OrderStatus.Releasable,
   OrderStatus.Refundable,
@@ -27,6 +59,8 @@ export const TERMINAL_STATUSES = [
   OrderStatus.Cancelled,
   OrderStatus.Refunded,
   OrderStatus.Dispute,
+  LoanStatus.Liquidated,
+  LoanStatus.Liquidatable
 ];
 
 export const OrderStatusLabelsES: Record<string, string> = {

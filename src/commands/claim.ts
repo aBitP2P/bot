@@ -6,7 +6,7 @@ import { db } from "../db/index.js";
 import { and, eq, or } from "drizzle-orm";
 import { OrderStatus } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
-import { getParties } from "../utils/order.js";
+import { getParties } from "../utils/parties.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
 import { getBotFeePercent } from "../config/fees.js";
 

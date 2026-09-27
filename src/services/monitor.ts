@@ -9,7 +9,7 @@ import { getUser } from "../db/users.js";
 import { tryTransitionOrderStatus } from "../db/orders.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { republishOrderSilently } from "../handlers/orderHandler.js";
-import { getParties } from "../utils/order.js";
+import { getParties } from "../utils/parties.js";
 import { safeNotify } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
 import { getBotFeePercent } from "../config/fees.js";

@@ -1,5 +1,5 @@
 import { mysqlTable, varchar, text, int, bigint, double, index, uniqueIndex } from "drizzle-orm/mysql-core";
-import { OrderStatus } from "../shared/constants.js";
+import { LoanStatus, OrderStatus } from "../shared/constants.js";
 
 export const users = mysqlTable("users", {
   telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
@@ -69,4 +69,46 @@ export const orderRatings = mysqlTable("order_ratings", {
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
 }, (table) => [
   uniqueIndex("unique_rating_idx").on(table.orderId, table.raterId),
+]);
+
+export const loans = mysqlTable("loans", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  type: varchar("type", { length: 10 }).notNull(),
+  
+  creatorId: bigint("creator_id", { mode: "number" }).notNull(),
+  takerId: bigint("taker_id", { mode: "number" }),
+  status: varchar("status", { length: 64 }).notNull().default(LoanStatus.Pending),
+
+  amountFiat: varchar("amount_fiat", { length: 64 }).notNull(),
+  fiatAmountLocked: double("fiat_amount_locked"), 
+  fiatCode: varchar("fiat_code", { length: 10 }).notNull(),
+  paymentMethod: varchar("payment_method", { length: 255 }).notNull(),
+
+  ltv: double("ltv").notNull(), 
+  apr: double("apr").notNull(), 
+  durationMonths: varchar("duration_months", { length: 64 }).notNull(), 
+
+  borrowerAddress: varchar("borrower_address", { length: 255 }),
+  lenderAddress: varchar("lender_address", { length: 255 }),
+  
+  borrowerPubkey: text("borrower_pubkey"),
+  lenderPubkey: text("lender_pubkey"),
+
+  collateralSats: bigint("collateral_sats", { mode: "number" }).notNull().default(0), 
+  escrowAddress: varchar("escrow_address", { length: 255 }),
+  witnessScript: text("witness_script"),
+  payoutTxid: varchar("payout_txid", { length: 128 }),
+
+  cancelRequestedBy: bigint("cancel_requested_by", { mode: "number" }),
+  channelMessageId: int("channel_message_id"),
+  disputeAdminId: bigint("dispute_admin_id", { mode: "number" }),
+  disputeResolution: varchar("dispute_resolution", { length: 32 }),
+
+  loanStartAt: bigint("loan_start_at", { mode: "number" }), 
+  createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull().$defaultFn(() => Date.now())
+}, (table) => [
+  index("loan_status_idx").on(table.status),
+  index("loan_creator_idx").on(table.creatorId),
+  index("loan_taker_idx").on(table.takerId),
 ]);

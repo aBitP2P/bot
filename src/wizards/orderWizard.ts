@@ -172,9 +172,10 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
   }
 }
 
-export async function handleWizardAction(ctx: BotContext) {
+export async function handleMarginAction(ctx: BotContext) {
   const callbackQuery = ctx.callbackQuery as { data?: string };
   if (!callbackQuery?.data?.startsWith("margin_")) return;
+  if (!ctx.session.draft.amount) return;
 
   const userId = ctx.from?.id;
   if (!userId) return;

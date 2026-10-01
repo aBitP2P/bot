@@ -2,68 +2,15 @@ import "dotenv/config";
 import { Telegraf, session } from "telegraf";
 import { type BotContext, type SessionData } from "./types.js";
 import {
-  startOrderWizard,
-  cancelWizard,
-  handleWizardInput,
-  handleWizardAction,
-} from "./wizards/orderWizard.js";
-import { getUserDict } from "./locales/index.js";
-import { getUser } from "./db/users.js";
-import {
-  handleMakerConfirm,
-  handleOrderCancelledRepublish,
-  handleTakeOrder,
-  handleTakerConfirm,
-  notifyMakerForConfirmation,
-  proceedAfterTakerAmount,
-} from "./handlers/orderHandler.js";
-import { getOrder, tryTransitionOrderStatus } from "./db/orders.js";
-import { message } from "telegraf/filters";
-import { orders, users } from "./db/schema.js";
-import { db } from "./db/index.js";
-import { eq } from "drizzle-orm";
-import { isValidAddress } from "./core/bitcoin/index.js";
-import { initializeEscrow } from "./handlers/escrowHandler.js";
-import {
   startEscrowMonitor,
   startOrderTimeoutsMonitor,
-} from "./services/monitor.js";
+  startLoanEscrowMonitor
+} from "./services/index.js";
 import { userMiddleware } from "./middlewares/auth.js";
-import {
-  claimCommand,
-  fiatsentCommand,
-  releaseCommand,
-  cancelCommand,
-  listOrdersCommand,
-  disputeCommand,
-  takeDisputeCommand,
-  settleCommand,
-  helpCommand,
-  setlangCommand,
-  feesCommand,
-  setFeeCommand,
-} from "./commands/index.js";
-import {
-  claimPasswordStep,
-  setPassStep,
-  claimRefundAddressStep,
-} from "./steps/index.js";
-import { resolveDispute } from "./handlers/disputeHandler.js";
-import {
-  routeCancel,
-} from "./commands/cancel.js";
-import { handleRating } from "./handlers/ratingHandler.js";
-import { OrderStatus, Strings } from "./shared/constants.js";
-import { handleSetLangAction } from "./commands/setlang.js";
-import { markAsFiatSent } from "./commands/fiatsent.js";
-import { askReleaseConfirmation, doFundsRelease } from "./commands/release.js";
-import { initiateClaim } from "./commands/claim.js";
-import { safeRemoveMarkup } from "./utils/telegram.js";
-import {
-  handleLoanWizardAction,
-  handleLoanWizardInput,
-  startLoanWizard,
-} from "./wizards/loanWizard.js";
+import { Strings } from "./shared/constants.js";
+import { setupActions } from "./routes/actions.js";
+import { setupCommands } from "./routes/commands.js";
+import { setupMessages } from "./routes/messages.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -81,166 +28,10 @@ bot.use((ctx, next) => {
   }
   return next();
 });
-bot.command("buy", (ctx) => startOrderWizard(ctx, "BUY"));
-bot.command("sell", (ctx) => startOrderWizard(ctx, "SELL"));
-bot.command("lend", (ctx) => startLoanWizard(ctx, "LEND"));
-bot.command("borrow", (ctx) => startLoanWizard(ctx, "BORROW"));
-bot.command("exit", (ctx) => cancelWizard(ctx));
-bot.command("setpass", async (ctx) => {
-  if (ctx.user.pubkey !== null) return ctx.reply(ctx.dict.passwordAlreadySet);
-  ctx.session.step = "SET_PASS";
-  await ctx.reply(ctx.dict.promptPassword, { parse_mode: "Markdown" });
-});
 
-bot.command("claim", claimCommand);
-bot.command("fiatsent", fiatsentCommand);
-bot.command("release", releaseCommand);
-bot.command("cancel", cancelCommand);
-bot.command("listorders", listOrdersCommand);
-bot.command("dispute", disputeCommand);
-bot.command("takedispute", takeDisputeCommand);
-bot.command("settle", settleCommand);
-bot.command("help", helpCommand);
-bot.command("setlang", setlangCommand);
-bot.command("fees", feesCommand);
-bot.command("setfee", setFeeCommand);
-
-bot.on("callback_query", async (ctx, next) => {
-  const query = ctx.callbackQuery as { data?: string };
-  const data = query?.data;
-
-  if (!data) return next();
-
-  if (data.startsWith("margin_")) {
-    if (!ctx.session.draft.amount) return; // Es posible que haya presionado el botón de un mensaje pasado.
-    return handleWizardAction(ctx);
-  }
-
-  if (data.startsWith("take_order_")) {
-    const orderId = data.replace("take_order_", "");
-    return handleTakeOrder(ctx, orderId);
-  }
-
-  if (data.startsWith("taker_yes_")) {
-    return handleTakerConfirm(ctx, data.replace("taker_yes_", ""));
-  }
-
-  if (data.startsWith("maker_yes_")) {
-    return handleMakerConfirm(ctx, data.replace("maker_yes_", ""));
-  }
-  if (data.startsWith("taker_cancel_order_")) {
-    const orderId = data.replace("taker_cancel_order_", "");
-    return handleOrderCancelledRepublish(ctx, orderId);
-  }
-
-  if (data.startsWith("setlang_")) {
-    return handleSetLangAction(ctx);
-  }
-
-  if (data.startsWith("cancelCommand_")) {
-    const id = data.replace("cancelCommand_", "");
-    await safeRemoveMarkup(ctx);
-    return routeCancel(ctx, id);
-  }
-
-  if (data.startsWith("fiatsentCommand_")) {
-    const orderId = data.replace("fiatsentCommand_", "");
-    await markAsFiatSent(ctx, orderId);
-  }
-
-  if (data.startsWith("releaseCommand_")) {
-    const orderId = data.replace("releaseCommand_", "");
-    await askReleaseConfirmation(ctx, orderId);
-  }
-
-  if (data.startsWith("confirmRelease")) {
-    const orderId = data.replace("confirmRelease_", "");
-    const order = await getOrder(orderId);
-    if (!order)
-      return ctx.answerCbQuery(ctx.dict.orderNotFound, { show_alert: true });
-    await doFundsRelease(ctx, order);
-  }
-
-  if (data.startsWith("cancelRelease")) {
-    return await ctx.editMessageText(ctx.dict.cancelled);
-  }
-
-  if (data.startsWith("claimCommand_")) {
-    const orderId = data.replace("claimCommand_", "");
-    return initiateClaim(ctx, orderId);
-  }
-
-  if (data.startsWith("setfee_default")) {
-    await db
-      .update(users)
-      .set({ customFee: null })
-      .where(eq(users.telegramId, ctx.from.id));
-    await ctx.answerCbQuery();
-    await ctx.editMessageText(ctx.dict.feeResetSuccess, {
-      parse_mode: "Markdown",
-    });
-  }
-
-  if (data.startsWith("ltv_")) {
-    return handleLoanWizardAction(ctx);
-  }
-
-  if (data.startsWith("maker_deny_")) {
-    const orderId = data.replace("maker_deny_", "");
-    const order = await getOrder(orderId);
-    if (!order) return;
-
-    const didCancel = await tryTransitionOrderStatus(
-      orderId,
-      [OrderStatus.WaitingMakerConfirmation],
-      OrderStatus.Cancelled,
-    );
-    if (!didCancel) {
-      await safeRemoveMarkup(ctx);
-      return ctx.answerCbQuery(ctx.dict.cancelNotAllowed, { show_alert: true });
-    }
-
-    await ctx.editMessageText(ctx.dict.orderCancelled);
-
-    if (order.takerId) {
-      const taker = await getUser(order.takerId);
-      const takerDict = getUserDict(taker?.language);
-      await ctx.telegram.sendMessage(
-        order.takerId,
-        takerDict.counterpartyCanceledDeleted(orderId),
-        { parse_mode: "Markdown" },
-      );
-    }
-    return;
-  }
-
-  if (data.startsWith("rate_")) {
-    // "rate_5_orderId"
-    const parts = data.split("_");
-    if (parts.length < 3) return;
-    const stars = parseInt(parts[1]!);
-    const orderId = parts[2]!;
-    const raterId = ctx.from.id;
-
-    return await handleRating(ctx, {
-      orderId,
-      stars,
-      raterId,
-    });
-  }
-
-  if (data.startsWith("settle_buyer_")) {
-    return resolveDispute(ctx, data.replace("settle_buyer_", ""), "BUYER");
-  }
-  if (data.startsWith("settle_seller_")) {
-    return resolveDispute(ctx, data.replace("settle_seller_", ""), "SELLER");
-  }
-  if (data.startsWith("settle_refund_")) {
-    return resolveDispute(ctx, data.replace("settle_refund_", ""), "REFUND");
-  }
-
-  return next();
-});
+setupMessages(bot);
+setupCommands(bot);
+setupActions(bot);
 
 bot.start(async (ctx) => {
   const text =
@@ -262,122 +53,14 @@ bot.start(async (ctx) => {
   await ctx.reply(text, { parse_mode: "Markdown" });
 });
 
-bot.on(message("text"), async (ctx, next) => {
-  const text = ctx.message.text;
-  if (ctx.session.step === "SET_PASS") {
-    await setPassStep(ctx);
-    return;
-  }
-
-  if (ctx.session.step === "CLAIM_PASSWORD") {
-    await claimPasswordStep(ctx);
-    return;
-  }
-
-  if (ctx.session.step === "CLAIM_REFUND_ADDRESS") {
-    await claimRefundAddressStep(ctx);
-    return;
-  }
-
-  if (ctx.session.step.startsWith("WAITING_LOAN_")) {
-    return handleLoanWizardInput(ctx);
-  } else if (ctx.session.step !== "IDLE") {
-    return handleWizardInput(ctx);
-  }
-
-  const orderToSetAmount = ctx.session.awaitingAmountForOrder;
-  if (orderToSetAmount) {
-    const order = await getOrder(orderToSetAmount);
-    if (
-      !order ||
-      order.status !== OrderStatus.WaitingTakerConfirmation ||
-      order.takerId !== ctx.from.id
-    ) {
-      ctx.session.awaitingAmountForOrder = undefined;
-      return next();
-    }
-
-    const [minStr, maxStr] = order.amountFiat.split("-");
-    const min = parseFloat(minStr!);
-    const max = parseFloat(maxStr!);
-    const inputAmount = parseFloat(text.replaceAll(",", "."));
-
-    const dict = ctx.dict;
-
-    if (isNaN(inputAmount) || inputAmount < min || inputAmount > max) {
-      return ctx.reply(dict.invalidAmountRange(min, max), {
-        parse_mode: "Markdown",
-      });
-    }
-
-    await db
-      .update(orders)
-      .set({ fiatAmountLocked: inputAmount })
-      .where(eq(orders.id, order.id));
-    ctx.session.awaitingAmountForOrder = undefined;
-
-    return proceedAfterTakerAmount(ctx, {
-      ...order,
-      fiatAmountLocked: inputAmount, // Para evitar volver a hacer un fetch después
-    });
-  }
-
-  const orderId = ctx.session.awaitingAddressForOrder;
-
-  if (orderId) {
-    const address = ctx.message.text.trim();
-    const order = await getOrder(orderId);
-
-    if (
-      !order ||
-      (order.status !== OrderStatus.WaitingTakerConfirmation &&
-        order.status !== OrderStatus.WaitingMakerConfirmation)
-    ) {
-      ctx.session.awaitingAddressForOrder = undefined;
-      return next();
-    }
-
-    if (!isValidAddress(address)) {
-      return ctx.reply(ctx.dict.invalidBuyerAddress, {
-        parse_mode: "Markdown",
-      });
-    }
-
-    await db
-      .update(orders)
-      .set({ buyerAddress: address })
-      .where(eq(orders.id, orderId));
-    ctx.session.awaitingAddressForOrder = undefined;
-
-    const dict = ctx.dict;
-
-    if (order.status === OrderStatus.WaitingTakerConfirmation) {
-      await ctx.reply(dict.waitMaker, { parse_mode: "Markdown" });
-      await notifyMakerForConfirmation(ctx, order);
-    } else if (order.status === OrderStatus.WaitingMakerConfirmation) {
-      await ctx.reply(dict.waitTaker, { parse_mode: "Markdown" });
-      const didTransition = await tryTransitionOrderStatus(
-        orderId,
-        [OrderStatus.WaitingMakerConfirmation],
-        OrderStatus.WaitingEscrow,
-      );
-
-      if (didTransition) {
-        await initializeEscrow(ctx, orderId);
-      }
-    }
-    return;
-  }
-
-  return next();
-});
-
 bot.catch((err, ctx) => {
   console.error(`Error en actualización ${ctx.update.update_id}:`, err);
 });
 
 startEscrowMonitor(bot);
 startOrderTimeoutsMonitor(bot);
+
+startLoanEscrowMonitor(bot);
 bot.launch();
 
 process.once("SIGINT", () => bot.stop("SIGINT"));

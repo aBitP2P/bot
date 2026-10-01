@@ -566,4 +566,206 @@ export default {
     "❌ Você já tem uma ordem em andamento. Você deve finalizá-la ou cancelá-la antes de aceitar outra.",
   invalidCustomFee:
     "❌ O valor deve ser igual ou maior que 0.8, menor que 20 e ter até 2 casas decimais.",
+
+  // ─────────────────────────── Loans ───────────────────────────
+  lendType: "🟢 Emprestando",
+  borrowType: "🔴 Pegando emprestado",
+  loanWizardPreview: (
+    type: string, 
+    fiat: string,
+    amount: string,
+    apr: string,
+    ltv: string,
+    duration: string,
+    method: string,
+    prompt: string,
+  ) =>
+    `🏦 *Estruturando Empréstimo (${type})*\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💵 **Capital (FIAT):** \`${amount} ${fiat}\`\n` +
+    `🛡️ **Garantia (LTV):** \`${ltv}\`\n` +
+    `📈 **Taxa Anual (APR):** \`${apr}\`\n` +
+    `⏳ **Duração:** \`${duration} mes(es)\`\n` +
+    `🏦 **Método de pagamento:** \`${method}\`\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💡 _Para abortar o processo digite /exit_\n\n` +
+    `👉 *${prompt}*`,
+  channelLoanOffer: ({
+    action,
+    draft,
+    user,
+    loanId,
+  }: {
+    action: string;
+    draft: any;
+    user: any;
+    loanId: string;
+  }) => {
+    const daysUsing = Math.floor((Date.now() - user.createdAt) / 86400000);
+    const hashtag = `#${draft.type}${draft.fiat}`;
+    const method = draft.paymentMethod ? draft.paymentMethod.replace(/[_*`\[]/g, "\\$&") : "";
+
+    return (
+      `**${action}**\n\n` +
+      `Por ${draft.amount} ${draft.fiat} ${getFiatEmoji(draft.fiat!)}\n` +
+      `💳 Método: ${method}\n` +
+      `⏳ Prazo: ${draft.durationMonths} meses\n` +
+      `📈 APR (Taxa Anual): ${draft.apr}%\n` +
+      `🛡️ LTV (Garantia): ${draft.ltv}%\n\n` +
+      `🤝 Tem ${user.tradesCount} operações bem-sucedidas\n` +
+      `⏳ Usa o bot há ${daysUsing} dias\n\n` +
+      `${hashtag}\n` +
+      `${user.rating.toFixed(1)} ${"⭐".repeat(Math.floor(user.rating))} (${user.ratingCount})\n\n` +
+      `\`${loanId}\``
+    );
+  },
+  loanPublishedSuccess: (loanId: string) =>
+    `✅ *Sua oferta de empréstimo foi publicada no canal.*\nAvisaremos quando alguém a pegar.\n\nID: \`${loanId}\``,
+  actionLend: "🟢 Oferece empréstimo",
+  actionBorrow: "🔴 Pegando emprestado",
+  btnTakeLoanBorrow: "Pegar emprestado",
+  btnTakeLoanLend: "Emprestar",
+  invalidLoanDuration:
+    "❌ A duração deve ser um número inteiro (ou intervalo, ex: 3-6) entre 1 e 120 meses. Tente novamente:",
+  invalidLoanDurationRange: (min: number, max: number) =>
+    `❌ A duração deve estar entre ${min} e${max} meses. Tente novamente:`,
+  promptLoanLTV:
+    "🛡️ Selecione o Loan-to-Value (LTV) 👇\n_Define quanto de garantia é exigido. Ex: Com um LTV de 50%, um empréstimo de $1.000 exigirá bloquear $2.000 em Bitcoin como garantia._",
+  promptLoanDuration: "Digite a duração do contrato em **meses**:",
+  promptLoanPaymentMethod:
+    "Digite o método para enviar/receber o FIAT (Ex: PIX, Transferência, etc.)",
+  promptLoanAPR:
+    "Digite a Taxa de Juros Anual (APR) em porcentagem (Ex: 5, 8.5, 12):",
+
+  invalidLoanAPR:
+    "❌ A APR deve ser um número válido (maior que 0 e menor que 100). Casas decimais são permitidas. Tente novamente:",
+  maxLoansReached:
+    "❌ Você atingiu o limite de ofertas de empréstimos publicadas.",
+
+  cancelLoanForbidden:
+    "❌ Você não pode cancelar um empréstimo depois que o dinheiro FIAT foi enviado ou o contrato está ativo. Em caso de problemas, abra uma disputa com /dispute.",
+  loanCancelOnlyBorrower:
+    "❌ Apenas o mutuário (quem pega emprestado) pode cancelar o empréstimo neste estado.",
+
+  loanTakerAskConfirm: ({
+    type,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    id,
+  }: any) =>
+    `*${type}*\n\n` +
+    `💵 Capital: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
+    `🛡️ Garantia (LTV): ${ltv}%\n` +
+    `📈 APR: ${apr}%\n` +
+    `⏳ Prazo: ${duration} meses\n` +
+    `💳 Método: ${method}\n\n` +
+    `Tem certeza de que deseja pegar esta oferta?\n\n` +
+    `ID: \`${id}\``,
+  loanTakerFinalConfirm: ({
+    role,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    id,
+    totalReturn,
+    estimatedCollateral,
+  }: any) => {
+    let text =
+      `📋 *Resumo Final do Empréstimo*\n\n` +
+      `💵 Capital: ${amount} ${fiat}\n` +
+      `⏳ Prazo: ${duration} meses\n` +
+      `💳 Método: ${method}\n\n`;
+
+    if (role === "LENDER") {
+      text += `📈 APR: ${apr}%\n`;
+      text += `💰 **A receber no final (Aprox):** ${totalReturn} ${fiat}\n`;
+      text += `_(O mutuário depositará garantia em BTC para assegurar seu capital)_\n\n`;
+    } else {
+      text += `🛡️ Garantia (LTV): ${ltv}%\n`;
+      text += `📈 Juros a pagar (APR): ${apr}%\n`;
+      text += `💰 **Total a devolver:** ${totalReturn} ${fiat}\n`;
+      text += `🔒 Garantia estimada a bloquear: ${estimatedCollateral} BTC\n`;
+    }
+    text += `Deseja confirmar os termos e notificar a contraparte?\n\nID: \`${id}\``;
+    return text;
+  },
+
+  loanMakerAskConfirm: ({
+    role,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    totalReturn,
+    collateralSats,
+    trades,
+    days,
+    rating,
+    id,
+  }: any) => {
+    let text =
+      `Alguém aceitou sua oferta de empréstimo e definiu os termos exatos:\n\n` +
+      `💵 Capital: ${amount} ${fiat}\n` +
+      `⏳ Prazo: ${duration} meses\n` +
+      `💳 Método: ${method}\n\n`;
+
+    if (role === "LENDER") {
+      text += `📈 APR: ${apr}%\n`;
+      text += `💰 **A receber no final (Aprox):** ${totalReturn} ${fiat}\n`;
+      text += `_(O mutuário bloqueará ${collateralSats} BTC como garantia)_\n\n`;
+    } else {
+      text += `🛡️ Garantia (LTV): ${ltv}%\n`;
+      text += `📈 Juros a pagar (APR): ${apr}%\n`;
+      text += `💰 **Total a devolver:** ${totalReturn} ${fiat}\n`;
+      text += `🔒 Garantia a bloquear: ${collateralSats} BTC\n\n`;
+    }
+
+    text +=
+      `👤 **Dados da contraparte:**\n` +
+      `🤝 Operações: ${trades}\n` +
+      `⏳ Antiguidade: ${days} dias\n` +
+      `⭐ Reputação: ${rating.toFixed(1)}/5.0\n\n` +
+      `Deseja aceitar este contrato e avançar para o Escrow?\n\nID: \`${id}\``;
+    return text;
+  },
+  promptLoanExactAmount: (range: string, fiat: string) =>
+    `Esta oferta de empréstimo permite um intervalo de capital de **${range} ${fiat}**.\n\n` +
+    `💬 *Digite no chat o valor exato* que deseja (apenas números):`,
+  promptLoanExactDuration: (range: string) =>
+    `Esta oferta permite um prazo de **${range} meses**.\n\n` +
+    `💬 *Digite no chat a quantidade exata de meses* que deseja para este empréstimo:`,
+  waitLoanMaker:
+    "⏳ Perfeito. *Aguarde que o criador da oferta confirme* se deseja prosseguir com o empréstimo.",
+  askBorrowerEscrow: (sats: number, address: string) =>
+    `⚡ *Bloqueio de Garantia (Colateral) Necessário*\n\n` +
+    `Por favor, envie \`${sats / 100_000_000}\` BTC para o seguinte endereço do cofre multifinatura:\n\n` +
+    `\`${address}\`\n\n` +
+    `_Assim que a transação for confirmada (2 confirmações), o credor será notificado para lhe enviar o FIAT. Certifique-se de enviar a quantia EXATA._`,
+    
+  waitBorrowerDeposit: 
+    "⏳ *Empréstimo Aceito.*\n\nAgora estamos aguardando que o mutuário deposite o Bitcoin de garantia no Escrow. Notificaremos você quando os fundos estiverem garantidos na blockchain.",
+  
+  loanCollateralSecuredBorrower: (lenderContact: string, loanId: string) =>
+    `✅ *Garantia bloqueada e confirmada!* (\`${loanId}\`)\n\n` +
+    `Seu colateral em Bitcoin está assegurado no cofre multifinatura.\n\n` +
+    `🗣 **Entre em contato com o credor aqui:** ${lenderContact}\n\n` +
+    `_O credor foi notificado para lhe enviar o capital em FIAT. Enviaremos uma mensagem quando ele marcar o desembolso como enviado._`,
+    
+  loanCollateralSecuredLender: (borrowerContact: string, fiatAmount: number, fiatCode: string, loanId: string) =>
+    `✅ *Garantia bloqueada e confirmada!*\n\n` +
+    `O mutuário assegurou com sucesso seu Bitcoin no cofre multifinatura.\n\n` +
+    `🗣 **Entre em contato com o mutuário aqui:** ${borrowerContact}\n\n` +
+    `**INSTRUÇÕES:**\n` +
+    `Por favor, proceda com o desembolso do capital acordado de **${fiatAmount} ${fiatCode}** ao mutuário através do seu método de pagamento.\n\n` +
+    `Assim que você enviar o dinheiro, execute este comando para iniciar o relógio do empréstimo:\n` +
+    `\`/fiatsent ${loanId}\``,
 };

@@ -606,12 +606,12 @@ export default {
     loanId: string;
   }) => {
     const daysUsing = Math.floor((Date.now() - user.createdAt) / 86400000);
-    const hashtag = `#LOAN${draft.fiat}`;
+    const hashtag = `#${draft.type}${draft.fiat}`;
     const method = escapeMarkdown(draft.paymentMethod || "");
 
     return (
       `**${action}**\n\n` +
-      `Por ${draft.amount} ${draft.fiat}${getFiatEmoji(draft.fiat!)}\n` +
+      `Por ${draft.amount} ${draft.fiat} ${getFiatEmoji(draft.fiat!)}\n` +
       `💳 Método: ${method}\n` +
       `⏳ Plazo: ${draft.durationMonths} meses\n` +
       `📈 APR (Tasa Anual): ${draft.apr}%\n` +
@@ -630,7 +630,9 @@ export default {
   btnTakeLoanBorrow: "Pedir prestado",
   btnTakeLoanLend: "Prestar",
   invalidLoanDuration:
-    "❌ La duración debe ser un número entero (o rango, ej: 3-6) entre 1 y 60 meses. Intenta de nuevo:",
+    "❌ La duración debe ser un número entero (o rango, ej: 3-6) entre 1 y 120 meses. Intenta de nuevo:",
+  invalidLoanDurationRange: (min: number, max: number) =>
+    `❌ La duración debe estar entre ${min} y ${max} meses. Intenta de nuevo:`,
   promptLoanLTV:
     "🛡️ Selecciona el Loan-to-Value (LTV) 👇\n_Define cuánto colateral se exige. Ej: Con un LTV del 50%, un préstamo de $1,000 requerirá bloquear $2,000 en Bitcoin como garantía._",
   promptLoanDuration: "Escribe la duración del contrato en **meses**:",
@@ -644,6 +646,135 @@ export default {
   maxLoansReached:
     "❌ Haz alcanzado el límite de anuncios de préstamos publicados.",
 
-  cancelLoanForbidden: "❌ No puedes cancelar un préstamo una vez que el dinero FIAT ha sido enviado o el contrato está activo. Si hay un problema, debes abrir una disputa usando /dispute.",
-  loanCancelOnlyBorrower: "❌ Solo el prestatario puede cancelar el préstamo en este estado.",
+  cancelLoanForbidden:
+    "❌ No puedes cancelar un préstamo una vez que el dinero FIAT ha sido enviado o el contrato está activo. Si hay un problema, debes abrir una disputa usando /dispute.",
+  loanCancelOnlyBorrower:
+    "❌ Solo el prestatario puede cancelar el préstamo en este estado.",
+
+  loanTakerAskConfirm: ({
+    type,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    id,
+  }: any) =>
+    `*${type}*\n\n` +
+    `💵 Capital: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
+    `🛡️ Garantía (LTV): ${ltv}%\n` +
+    `📈 APR: ${apr}%\n` +
+    `⏳ Plazo: ${duration} meses\n` +
+    `💳 Método: ${method}\n\n` +
+    `¿Estás seguro de que deseas tomar esta oferta?\n\n` +
+    `ID: \`${id}\``,
+  loanTakerFinalConfirm: ({
+    role,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    id,
+    totalReturn,
+    estimatedCollateral,
+  }: any) => {
+    let text =
+      `📋 *Resumen Final del Préstamo*\n\n` +
+      `💵 Capital: ${amount} ${fiat}\n` +
+      `⏳ Plazo: ${duration} meses\n` +
+      `💳 Método: ${method}\n\n`;
+
+    if (role === "LENDER") {
+      text += `📈 APR: ${apr}%\n`;
+      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn} ${fiat}\n`;
+      text += `_(El prestatario depositará colateral en BTC para asegurar tu capital)_\n\n`;
+    } else {
+      text += `🛡️ Garantía (LTV): ${ltv}%\n`;
+      text += `📈 Interés a pagar (APR): ${apr}%\n`;
+      text += `💰 **Total a devolver:** ${totalReturn} ${fiat}\n`;
+      text += `🔒 Colateral estimado a bloquear: ${estimatedCollateral} BTC\n`;
+    }
+    text += `¿Deseas confirmar los términos y notificar a la contraparte?\n\nID: \`${id}\``;
+    return text;
+  },
+
+  loanMakerAskConfirm: ({
+    role,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    totalReturn,
+    collateralSats,
+    trades,
+    days,
+    rating,
+    id,
+  }: any) => {
+    let text =
+      `Alguien ha aceptado tu oferta de préstamo y ha definido los términos exactos:\n\n` +
+      `💵 Capital: ${amount} ${fiat}\n` +
+      `⏳ Plazo: ${duration} meses\n` +
+      `💳 Método: ${method}\n\n`;
+
+    if (role === "LENDER") {
+      text += `📈 APR: ${apr}%\n`;
+      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn} ${fiat}\n`;
+      text += `_(El prestatario bloqueará ${collateralSats} BTC como garantía)_\n\n`;
+    } else {
+      text += `🛡️ Garantía (LTV): ${ltv}%\n`;
+      text += `📈 Interés a pagar (APR): ${apr}%\n`;
+      text += `💰 **Total a devolver:** ${totalReturn} ${fiat}\n`;
+      text += `🔒 Colateral a bloquear: ${collateralSats} BTC\n\n`;
+    }
+
+    text +=
+      `👤 **Datos de la contraparte:**\n` +
+      `🤝 Operaciones: ${trades}\n` +
+      `⏳ Antigüedad: ${days} días\n` +
+      `⭐ Reputación: ${rating.toFixed(1)}/5.0\n\n` +
+      `¿Deseas aceptar este contrato y avanzar al Escrow?\n\nID: \`${id}\``;
+    return text;
+  },
+  promptLoanExactAmount: (range: string, fiat: string) =>
+    `Esta oferta de préstamo permite un rango de capital de **${range} ${fiat}**.\n\n` +
+    `💬 *Escribe en el chat el monto exacto* que deseas (solo números):`,
+  promptLoanExactDuration: (range: string) =>
+    `Esta oferta permite un plazo de entre **${range} meses**.\n\n` +
+    `💬 *Escribe en el chat la cantidad exacta de meses* que deseas para este préstamo:`,
+  waitLoanMaker:
+    "⏳ Perfecto. *Espera a que el creador de la oferta confirme* si desea proceder con el préstamo.",
+  askBorrowerEscrow: (sats: number, address: string) =>
+    `⚡ *Bloqueo de Garantía (Colateral) Requerido*\n\n` +
+    `Por favor, envía \`${sats / 100_000_000}\` BTC a la siguiente dirección de la bóveda multifirma:\n\n` +
+    `\`${address}\`\n\n` +
+    `_Una vez se confirme la transacción (2 confirmaciones), se le avisará al prestamista para que te envíe el FIAT. Asegúrate de enviar la cantidad EXACTA._`,
+
+  waitBorrowerDeposit:
+    "⏳ *Préstamo Aceptado.*\n\nAhora estamos esperando a que el prestatario deposite el Bitcoin de garantía en el Escrow. Te notificaremos cuando los fondos estén asegurados en la blockchain.",
+
+  loanCollateralSecuredBorrower: (lenderContact: string, loanId: string) =>
+    `✅ *¡Garantía bloqueada y confirmada!* (\`${loanId}\`)\n\n` +
+    `Tu colateral en Bitcoin está asegurado en la bóveda multifirma.\n\n` +
+    `🗣 **Contacta al prestamista aquí:** ${lenderContact}\n\n` +
+    `_El prestamista ha sido notificado para que te envíe el capital en FIAT. Te enviaremos un mensaje cuando marque el desembolso como enviado._`,
+
+  loanCollateralSecuredLender: (
+    borrowerContact: string,
+    fiatAmount: number,
+    fiatCode: string,
+    loanId: string,
+  ) =>
+    `✅ *¡Garantía bloqueada y confirmada!*\n\n` +
+    `El prestatario ha asegurado exitosamente su Bitcoin en la bóveda multifirma.\n\n` +
+    `🗣 **Contacta al prestatario aquí:** ${borrowerContact}\n\n` +
+    `**INSTRUCCIONES:**\n` +
+    `Por favor, procede a desembolsar el capital acordado de **${fiatAmount} ${fiatCode}** al prestatario a través de su método de pago.\n\n` +
+    `Una vez que le envíes el dinero, ejecuta este comando para iniciar el reloj del préstamo:\n` +
+    `\`/fiatsent ${loanId}\``,
 };

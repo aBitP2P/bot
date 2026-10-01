@@ -561,4 +561,206 @@ export default {
     "❌ You already have an order in progress. You must finish or cancel it before taking another one.",
   invalidCustomFee:
     "❌ The value must be equal to or greater than 0.8, less than 20, and have up to 2 decimal places.",
+
+  // ─────────────────────────── Loans ───────────────────────────
+  lendType: "🟢 Lending",
+  borrowType: "🔴 Borrowing",
+  loanWizardPreview: (
+    type: string, 
+    fiat: string,
+    amount: string,
+    apr: string,
+    ltv: string,
+    duration: string,
+    method: string,
+    prompt: string,
+  ) =>
+    `🏦 *Structuring Loan (${type})*\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💵 **Principal (FIAT):** \`${amount} ${fiat}\`\n` +
+    `🛡️ **Collateral (LTV):** \`${ltv}\`\n` +
+    `📈 **Annual Rate (APR):** \`${apr}\`\n` +
+    `⏳ **Duration:** \`${duration} month(s)\`\n` +
+    `🏦 **Payment Method:** \`${method}\`\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💡 _Type /exit to abort the process_\n\n` +
+    `👉 *${prompt}*`,
+  channelLoanOffer: ({
+    action,
+    draft,
+    user,
+    loanId,
+  }: {
+    action: string;
+    draft: any;
+    user: any;
+    loanId: string;
+  }) => {
+    const daysUsing = Math.floor((Date.now() - user.createdAt) / 86400000);
+    const hashtag = `#${draft.type}${draft.fiat}`;
+    const method = draft.paymentMethod ? draft.paymentMethod.replace(/[_*`\[]/g, "\\$&") : "";
+
+    return (
+      `**${action}**\n\n` +
+      `For ${draft.amount} ${draft.fiat} ${getFiatEmoji(draft.fiat!)}\n` +
+      `💳 Method: ${method}\n` +
+      `⏳ Term: ${draft.durationMonths} months\n` +
+      `📈 APR (Annual Rate): ${draft.apr}%\n` +
+      `🛡️ LTV (Collateral): ${draft.ltv}%\n\n` +
+      `🤝 Has ${user.tradesCount} successful trades\n` +
+      `⏳ Using the bot for ${daysUsing} days\n\n` +
+      `${hashtag}\n` +
+      `${user.rating.toFixed(1)} ${"⭐".repeat(Math.floor(user.rating))} (${user.ratingCount})\n\n` +
+      `\`${loanId}\``
+    );
+  },
+  loanPublishedSuccess: (loanId: string) =>
+    `✅ *Your loan offer has been published in the channel.*\nWe will notify you when someone takes it.\n\nID: \`${loanId}\``,
+  actionLend: "🟢 Offers to lend",
+  actionBorrow: "🔴 Borrowing",
+  btnTakeLoanBorrow: "Borrow",
+  btnTakeLoanLend: "Lend",
+  invalidLoanDuration:
+    "❌ Duration must be a whole number (or range, e.g., 3-6) between 1 and 120 months. Try again:",
+  invalidLoanDurationRange: (min: number, max: number) =>
+    `❌ Duration must be between ${min} and${max} months. Try again:`,
+  promptLoanLTV:
+    "🛡️ Select the Loan-to-Value (LTV) 👇\n_Defines how much collateral is required. E.g.: With a 50% LTV, a $1,000 loan requires locking $2,000 in Bitcoin as collateral._",
+  promptLoanDuration: "Type the contract duration in **months**:",
+  promptLoanPaymentMethod:
+    "Type the method to send/receive the FIAT (E.g., Bank Transfer, Zelle, etc.)",
+  promptLoanAPR:
+    "Type the Annual Percentage Rate (APR) (E.g., 5, 8.5, 12):",
+
+  invalidLoanAPR:
+    "❌ APR must be a valid number (greater than 0 and less than 100). Decimals are allowed. Try again:",
+  maxLoansReached:
+    "❌ You have reached the limit of active loan offers.",
+
+  cancelLoanForbidden:
+    "❌ You cannot cancel a loan once the FIAT has been sent or the contract is active. If there is an issue, open a dispute using /dispute.",
+  loanCancelOnlyBorrower:
+    "❌ Only the borrower can cancel the loan in this state.",
+
+  loanTakerAskConfirm: ({
+    type,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    id,
+  }: any) =>
+    `*${type}*\n\n` +
+    `💵 Principal: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
+    `🛡️ Collateral (LTV): ${ltv}%\n` +
+    `📈 APR: ${apr}%\n` +
+    `⏳ Term: ${duration} months\n` +
+    `💳 Method: ${method}\n\n` +
+    `Are you sure you want to take this offer?\n\n` +
+    `ID: \`${id}\``,
+  loanTakerFinalConfirm: ({
+    role,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    id,
+    totalReturn,
+    estimatedCollateral,
+  }: any) => {
+    let text =
+      `📋 *Final Loan Summary*\n\n` +
+      `💵 Principal: ${amount} ${fiat}\n` +
+      `⏳ Term: ${duration} months\n` +
+      `💳 Method: ${method}\n\n`;
+
+    if (role === "LENDER") {
+      text += `📈 APR: ${apr}%\n`;
+      text += `💰 **Total return at completion:** ${totalReturn} ${fiat}\n`;
+      text += `_(The borrower will deposit BTC collateral to secure your capital)_\n\n`;
+    } else {
+      text += `🛡️ Collateral (LTV): ${ltv}%\n`;
+      text += `📈 Interest to pay (APR): ${apr}%\n`;
+      text += `💰 **Total to repay:** ${totalReturn} ${fiat}\n`;
+      text += `🔒 Estimated collateral to lock: ${estimatedCollateral} BTC\n`;
+    }
+    text += `Do you want to confirm the terms and notify the counterparty?\n\nID: \`${id}\``;
+    return text;
+  },
+
+  loanMakerAskConfirm: ({
+    role,
+    fiat,
+    amount,
+    apr,
+    ltv,
+    duration,
+    method,
+    totalReturn,
+    collateralSats,
+    trades,
+    days,
+    rating,
+    id,
+  }: any) => {
+    let text =
+      `Someone has accepted your loan offer and defined the exact terms:\n\n` +
+      `💵 Principal: ${amount} ${fiat}\n` +
+      `⏳ Term: ${duration} months\n` +
+      `💳 Method: ${method}\n\n`;
+
+    if (role === "LENDER") {
+      text += `📈 APR: ${apr}%\n`;
+      text += `💰 **Total return at completion:** ${totalReturn} ${fiat}\n`;
+      text += `_(The borrower will lock ${collateralSats} BTC as collateral)_\n\n`;
+    } else {
+      text += `🛡️ Collateral (LTV): ${ltv}%\n`;
+      text += `📈 Interest to pay (APR): ${apr}%\n`;
+      text += `💰 **Total to repay:** ${totalReturn} ${fiat}\n`;
+      text += `🔒 Collateral to lock: ${collateralSats} BTC\n\n`;
+    }
+
+    text +=
+      `👤 **Counterparty data:**\n` +
+      `🤝 Trades: ${trades}\n` +
+      `⏳ Antiquity: ${days} days\n` +
+      `⭐ Reputation: ${rating.toFixed(1)}/5.0\n\n` +
+      `Do you want to accept this contract and proceed to the Escrow?\n\nID: \`${id}\``;
+    return text;
+  },
+  promptLoanExactAmount: (range: string, fiat: string) =>
+    `This loan offer allows a principal range of **${range} ${fiat}**.\n\n` +
+    `💬 *Type in the chat the exact amount* you want (numbers only):`,
+  promptLoanExactDuration: (range: string) =>
+    `This offer allows a term range of **${range} months**.\n\n` +
+    `💬 *Type in the chat the exact number of months* you want for this loan:`,
+  waitLoanMaker:
+    "⏳ Perfect. *Wait for the offer creator to confirm* if they wish to proceed with the loan.",
+  askBorrowerEscrow: (sats: number, address: string) =>
+    `⚡ *Collateral Lock Required*\n\n` +
+    `Please send \`${sats / 100_000_000}\` BTC to the following 2-of-3 multisig vault address:\n\n` +
+    `\`${address}\`\n\n` +
+    `_Once the transaction is confirmed (2 confirmations), the lender will be notified to send you the FIAT. Make sure to send the EXACT amount._`,
+    
+  waitBorrowerDeposit: 
+    "⏳ *Loan Accepted.*\n\nWe are now waiting for the borrower to deposit the collateral Bitcoin into the Escrow. We will notify you when the funds are secured on the blockchain.",
+  
+  loanCollateralSecuredBorrower: (lenderContact: string, loanId: string) =>
+    `✅ *Collateral locked and confirmed!* (\`${loanId}\`)\n\n` +
+    `Your Bitcoin collateral is secured in the multisig vault.\n\n` +
+    `🗣 **Contact the lender here:** ${lenderContact}\n\n` +
+    `_The lender has been notified to send you the FIAT principal. We will message you once they mark the disbursement as sent._`,
+    
+  loanCollateralSecuredLender: (borrowerContact: string, fiatAmount: number, fiatCode: string, loanId: string) =>
+    `✅ *Collateral locked and confirmed!*\n\n` +
+    `The borrower has successfully secured their Bitcoin in the multisig vault.\n\n` +
+    `🗣 **Contact the borrower here:** ${borrowerContact}\n\n` +
+    `**INSTRUCTIONS:**\n` +
+    `Please proceed to disburse the agreed principal of **${fiatAmount} ${fiatCode}** to the borrower via their payment method.\n\n` +
+    `Once you have sent the money, run this command to start the loan clock:\n` +
+    `\`/fiatsent ${loanId}\``,
 };

@@ -69,6 +69,7 @@ export default {
     `*⚠️ Se generará una llave privada ligada a tu usuario, la contraseña SERÁ NECESARIA para reclamar las órdenes.*\n` +
     `*NO SE PUEDE CAMBIAR, asegúrate de escribirla correctamente y anotarla en un lugar seguro.*\n\n` +
     "🔑 *Por favor, escribe tu contraseña para configurar tu usuario:*",
+  promptPasswordShort: "👇 Escribe la contraseña en el chat para firmar la transacción:",
   confirmPassword: "👉 Para confirmar, vuelve a escribir la contraseña: ",
   passwordsDoNotMatch:
     "❌ Las contraseñas no coinciden. Inténtalo de nuevo con /setpass",
@@ -98,7 +99,7 @@ export default {
   }) =>
     `⚠️ *Monto insuficiente tras aplicar margen*\n\n` +
     `Al aplicar tu margen del ${margin}%, el total a recibir bajó a ${satsAmount.toLocaleString()} sats.\n\n` +
-    `Para cumplir con el mínimo de ${MIN_SATS.toLocaleString()} sats, debes iniciar la orden con al menos *$${minFiatRequired.toFixed(2)}${fiatCode}*.\n\n` +
+    `Para cumplir con el mínimo de ${MIN_SATS.toLocaleString()} sats, debes iniciar la orden con al menos *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
     `🔄 Por favor, inicia la creación de la orden nuevamente.`,
   wizardPreview: (
     type: string,
@@ -143,8 +144,8 @@ export default {
     ratingCount: number;
   }) =>
     `**${action} Bitcoin**\n\n` +
-    `Por ${amountFiat.split("-").join(" - ")} ${fiat}${getFiatEmoji(fiat)}\n` +
-    `💳 ${payDirection}${method}\n` +
+    `Por ${amountFiat.split("-").join(" - ")} ${fiat} ${getFiatEmoji(fiat)}\n` +
+    `💳 ${payDirection} ${method}\n` +
     `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n\n` +
     `👤 **Contraparte:**\n` +
     `▪️ ${tradesCount} operaciones exitosas\n` +
@@ -208,7 +209,7 @@ export default {
     id: string;
   }) =>
     `*${type} Bitcoin*\n\n` +
-    `▪️ Monto: ${amount}${fiat}\n` +
+    `▪️ Monto: ${amount} ${fiat}\n` +
     `▪️ Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
     `▪️ Método: ${method}\n\n` +
     `¿Estás seguro de que deseas continuar?\n\n` +
@@ -235,7 +236,7 @@ export default {
     id: string;
   }) =>
     `Alguien quiere tomar tu orden de *${type}*.\n\n` +
-    `▪️ Monto: ${amount}${fiat}\n` +
+    `▪️ Monto: ${amount} ${fiat}\n` +
     `▪️ Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
     `▪️ Método: ${method}\n\n` +
     `👤 **Datos de la contraparte:**\n` +
@@ -245,7 +246,7 @@ export default {
     `¿Deseas confirmar e iniciar el intercambio?\n\n` +
     `ID: \`${id}\``,
   promptExactAmount: (range: string, fiat: string) =>
-    `Esta orden permite un rango de **${range}${fiat}**.\n\n` +
+    `Esta orden permite un rango de **${range} ${fiat}**.\n\n` +
     `💬 *Por favor, escribe en el chat el monto exacto* por el que deseas hacer el intercambio (solo números):`,
   askBuyerAddress: (estimatedSats: number) =>
     "📍 *Por favor, envía tu dirección de Bitcoin on-chain* donde recibirás los fondos.\n_(Asegúrate de que sea correcta, no nos hacemos responsables por errores de tipeo)_\n\n" +
@@ -341,7 +342,7 @@ export default {
   feeResetSuccess:
     "✅ Tu tarifa ha vuelto a la configuración económica por defecto.",
   errorProcessingTx: (err: string) => `❌ *Error en la red:*\n\`${err}\``,
-
+  errorGeneratingPsbt: "❌ Error generando PSBT",
   // ─────────────────────────── Fiat & Release ───────────────────────────
   selectReleasableOrder:
     "👇 Selecciona la orden de la cual deseas liberar los fondos en Bitcoin:",
@@ -392,7 +393,7 @@ export default {
     "👇 Selecciona la orden de la cual deseas reclamar los fondos:",
   noClaimableOrdersFound:
     "📭 No tienes órdenes listas para retirar o reembolsar.",
-  askClaimPassword: (
+  showClaimPreview: (
     minerFee: number,
     finalAmount: number,
     receivingAddress: string,
@@ -404,8 +405,15 @@ export default {
     `▪️ Comisión minera (est): \`-${minerFee / 100_000_000} BTC\` (${minerFeeRate} sats/vB)\n` +
     `▪️ **Recibirás aprox:** \`${finalAmount / 100_000_000} BTC\`\n\n` +
     `💡 *Nota:* Si no estás de acuerdo con la comisión minera, puedes enviar /exit para cancelar y usar /setfee para establecer tu propia tarifa.\n\n` +
-    `Por favor, **escribe tu contraseña** para firmar criptográficamente el retiro hacia tu billetera:`,
+    `Por favor, selecciona la forma en la que deseas firmar esta transacción:`,
+  btnTypePassword: "✍️ Ingresar Contraseña",
+  btnSignMiniapp: "🔐 Firmar en MiniApp",
+  btnTxSubmitted: "✅ Ya transmití la transacción",
   psbtSigningLoading: `⏳ *Co-firmando y transmitiendo a la red...*`,
+  transactionDetected: "✅ Transacción detectada en la red.",
+  noExternalTxDetected: "⏳ Aún no detecto la transacción en la red. Si acabas de enviarla, espera unos segundos y vuelve a intentar.",
+  successExternalSign: `✅ *Transacción Externa Completada*\n\nLos fondos han sido movidos exitosamente desde la MiniApp o una billetera externa. El contrato ha sido cerrado.`,
+  fundsAlreadyMoved: "⚠️ *Fondos ya movidos*\n\nDetectamos que los fondos de este contrato ya fueron transferidos externamente en la red Bitcoin. El contrato ha sido cerrado.",
   claimSuccess: (txid: string) =>
     `🎉 *¡Retiro Exitoso!*\n\nLos fondos van camino a tu billetera.\n🔎 [Ver TX](${mempoolBaseURL}/tx/${txid})`,
   askRefundAddress: `📍 Por favor, envía la dirección de Bitcoin a la que deseas recibir tu reembolso:`,
@@ -472,7 +480,7 @@ export default {
     `⚖️ *NUEVA DISPUTA*\n\n` +
     `Orden: \`${orderId}\`\n` +
     `Tipo: ${type}\n` +
-    `Monto: ${amountFiat}${fiatCode}\n` +
+    `Monto: ${amountFiat} ${fiatCode}\n` +
     `Estado previo: \`${status}\`\n` +
     `Escrow: \`${escrowAddress}\`\n\n` +
     `👤 Comprador: @${buyerUsername}\n` +
@@ -616,7 +624,7 @@ export default {
 
     return (
       `**${action}**\n\n` +
-      `Por ${draft.amount} ${draft.fiat}${getFiatEmoji(draft.fiat!)}\n` +
+      `Por ${draft.amount} ${draft.fiat} ${getFiatEmoji(draft.fiat!)}\n` +
       `💳 Método: ${method}\n` +
       `⏳ Plazo: ${draft.durationMonths} meses\n` +
       `📈 APR (Tasa Anual): ${draft.apr}%\n` +
@@ -668,7 +676,7 @@ export default {
     id,
   }: any) =>
     `*${type}*\n\n` +
-    `▪️ Capital: ${amount} ${fiat}${getFiatEmoji(fiat)}\n` +
+    `▪️ Capital: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
     `▪️ Garantía (LTV): ${ltv}%\n` +
     `▪️ APR: ${apr}%\n` +
     `▪️ Plazo: ${duration} meses\n` +
@@ -689,18 +697,18 @@ export default {
   }: any) => {
     let text =
       `📋 *Resumen Final del Préstamo*\n\n` +
-      `▪️ Capital: ${amount}${fiat}\n` +
+      `▪️ Capital: ${amount} ${fiat}\n` +
       `▪️ Plazo: ${duration} meses\n` +
       `▪️ Método: ${method}\n\n`;
 
     if (role === "LENDER") {
       text += `▪️ APR: ${apr}%\n`;
-      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn}${fiat}\n`;
+      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn} ${fiat}\n`;
       text += `_(El prestatario depositará colateral en BTC para asegurar tu capital)_\n\n`;
     } else {
       text += `▪️ Garantía (LTV): ${ltv}%\n`;
       text += `▪️ Interés a pagar (APR): ${apr}%\n`;
-      text += `💰 **Total a devolver:** ${totalReturn}${fiat}\n`;
+      text += `💰 **Total a devolver:** ${totalReturn} ${fiat}\n`;
       text += `🔒 Colateral estimado a bloquear: ${estimatedCollateral} BTC\n\n`;
     }
     text += `¿Deseas confirmar los términos y notificar a la contraparte?\n\nID: \`${id}\``;
@@ -724,18 +732,18 @@ export default {
   }: any) => {
     let text =
       `Alguien ha aceptado tu oferta de préstamo y ha definido los términos exactos:\n\n` +
-      `▪️ Capital: ${amount}${fiat}\n` +
+      `▪️ Capital: ${amount} ${fiat}\n` +
       `▪️ Plazo: ${duration} meses\n` +
       `▪️ Método: ${method}\n\n`;
 
     if (role === "LENDER") {
       text += `▪️ APR: ${apr}%\n`;
-      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn}${fiat}\n`;
+      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn} ${fiat}\n`;
       text += `_(El prestatario bloqueará ${collateralSats} BTC como garantía)_\n\n`;
     } else {
       text += `▪️ Garantía (LTV): ${ltv}%\n`;
       text += `▪️ Interés a pagar (APR): ${apr}%\n`;
-      text += `💰 **Total a devolver:** ${totalReturn}${fiat}\n`;
+      text += `💰 **Total a devolver:** ${totalReturn} ${fiat}\n`;
       text += `🔒 Colateral a bloquear: ${collateralSats} BTC\n\n`;
     }
 
@@ -748,7 +756,7 @@ export default {
     return text;
   },
   promptLoanExactAmount: (range: string, fiat: string) =>
-    `Esta oferta de préstamo permite un rango de capital de **${range}${fiat}**.\n\n` +
+    `Esta oferta de préstamo permite un rango de capital de **${range} ${fiat}**.\n\n` +
     `💬 *Escribe en el chat el monto exacto* que deseas (solo números):`,
   promptLoanExactDuration: (range: string) =>
     `Esta oferta permite un plazo de entre **${range} meses**.\n\n` +
@@ -780,7 +788,7 @@ export default {
     `El prestatario ha asegurado exitosamente su Bitcoin en la bóveda multifirma.\n\n` +
     `🗣 **Contacta al prestatario aquí:** ${borrowerContact}\n\n` +
     `**INSTRUCCIONES:**\n` +
-    `Por favor, procede a desembolsar el capital acordado de **${fiatAmount}${fiatCode}** al prestatario a través de su método de pago.\n\n` +
+    `Por favor, procede a desembolsar el capital acordado de **${fiatAmount} ${fiatCode}** al prestatario a través de su método de pago.\n\n` +
     `Una vez que le envíes el dinero, ejecuta este comando para iniciar el reloj del préstamo:\n` +
     `\`/fiatsent ${loanId}\``,
   loanFiatSentToLender: (loanId: string) =>
@@ -844,18 +852,18 @@ export default {
     fiat: string,
     loanId: string,
   ) =>
-    `🔔 *Nuevo reporte de pago*\n\nEl prestatario @${username} indica que ha enviado un pago de *${amount}${fiat}* para el préstamo \`${loanId}\`.\n\n¿Confirmas haber recibido este dinero en tu cuenta?`,
+    `🔔 *Nuevo reporte de pago*\n\nEl prestatario @${username} indica que ha enviado un pago de *${amount} ${fiat}* para el préstamo \`${loanId}\`.\n\n¿Confirmas haber recibido este dinero en tu cuenta?`,
   btnConfirmPayment: "✅ Sí, recibí el pago",
   btnRejectPayment: "❌ No, rechazar",
   hasPendingPayment: "❌ Ya tienes un pago pendiente por confirmar.",
   paymentPendingConfirmation:
     "✅ Tu reporte de pago ha sido enviado al prestamista. Te notificaremos cuando lo confirme.",
   borrowerPaymentConfirmed: (amount: number, fiat: string) =>
-    `✅ Tu pago de ${amount}${fiat} fue confirmado por el prestamista.`,
+    `✅ Tu pago de ${amount} ${fiat} fue confirmado por el prestamista.`,
   borrowerPaymentRejected: (amount: number, fiat: string) =>
-    `❌ El prestamista ha denegado la recepción de tu pago de ${amount}${fiat}.`,
+    `❌ El prestamista ha denegado la recepción de tu pago de ${amount} ${fiat}.`,
   paymentConfirmedAction: (amount: number, fiat: string) =>
-    `✅ Has confirmado la recepción de ${amount}${fiat}.`,
+    `✅ Has confirmado la recepción de ${amount} ${fiat}.`,
   paymentRejectedAction: "❌ Has rechazado el pago.",
   paymentError: "❌ Error procesando el pago o este ya había sido procesado.",
   loanFullyRepaidLender: (loanId: string) =>
@@ -962,4 +970,19 @@ export default {
     `⏳ *Pago pendiente de revisión*\n\n` +
     `Ya has reportado un pago para el préstamo \`${loanId}\` y está a la espera de confirmación.\n\n` +
     `Por favor, espera a que el prestamista revise y procese tu aviso actual antes de intentar reportar un nuevo pago.`,
+
+  // ─────────────────────────── Backup ───────────────────────────
+  backupPrivateOnly: "⚠️ Por tu seguridad, este comando solo funciona en chat privado conmigo.",
+  backupMenuText: "🔐 *Centro de Respaldo*\n\n¿Qué información deseas exportar?",
+  btnBackupUser: "👤 Respaldo de Usuario (Llaves)",
+  btnBackupContract: "📜 Respaldo de Contrato (Multisig)",
+  backupUserWarning: "🚨 *ZONA DE SEGURIDAD* 🚨\n\nEstás a punto de revelar tu llave privada encriptada. Asegúrate de estar en un lugar privado.\n\n_Nadie del equipo te pedirá estos datos nunca._",
+  btnRevealKeys: "👁️ Sí, mostrar mis llaves",
+  btnBack: "⬅️ Volver",
+  btnCancel: "❌ Cancelar",
+  backupUserKeys: (pubkey: string, encryptedWif: string) => `🔑 *Tus Credenciales de Respaldo*\n\n*Llave Pública:*\n\`${pubkey}\`\n\n*Llave Privada Encriptada (WIF):*\n||${encryptedWif}||\n\n_Toca el cuadro gris para revelar tu llave y tócalo de nuevo para copiarla. Luego elimina este mensaje._`,
+  noActiveContractsBackup: "No tienes contratos activos para respaldar.",
+  backupContractsListText: "📜 *Respaldo de Contratos*\n\nSelecciona el contrato del cual quieres extraer la información técnica:",
+  backupContractDetails: (id: string, escrowAddress: string, witnessScript: string) => `📜 *Respaldo del Contrato #${id}*\n\nEsta información técnica te permite interactuar con el contrato de forma manual y externa al bot en caso de emergencia.\n\n*Dirección Escrow:*\n\`${escrowAddress}\`\n\n*Witness Script (Hex):*\n\`${witnessScript}\`\n\n_Toca los recuadros para copiar. Guarda esto en un lugar seguro._`,
+  btnBackToList: "⬅️ Volver a la lista",
 };

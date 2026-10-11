@@ -69,6 +69,8 @@ export default {
     `*⚠️ A private key linked to your user will be generated, the password WILL BE REQUIRED to claim orders.*\n` +
     `*IT CANNOT BE CHANGED, make sure to write it correctly and save it in a secure place.*\n\n` +
     "🔑 *Please enter your password to set up your account:*",
+  promptPasswordShort:
+    "👇 Type your password in the chat to sign the transaction:",
   confirmPassword: "👉 To confirm, type your password again: ",
   passwordsDoNotMatch:
     "❌ Passwords do not match. Please try again with /setpass",
@@ -405,7 +407,15 @@ export default {
     `Please select how you want to sign this transaction:`,
   btnTypePassword: "✍️ Enter Password",
   btnSignMiniapp: "🔐 Sign in MiniApp",
+  btnTxSubmitted: "✅ Transaction already submitted",
   psbtSigningLoading: `⏳ *Co-signing and broadcasting to the network...*`,
+  transactionDetected: "✅ Transaction detected on the network.",
+  noExternalTxDetected:
+    "⏳ I haven't detected the transaction on the network yet. If you just sent it, wait a few seconds and try again.",
+  successExternalSign:
+    "✅ *External Transaction Completed*\n\nThe funds have been successfully moved from the MiniApp or an external wallet. The contract has been closed.",
+  fundsAlreadyMoved:
+    "⚠️ *Funds already moved*\n\nWe detected that the funds for this contract were already transferred externally on the Bitcoin network. The contract has been closed.",
   claimSuccess: (txid: string) =>
     `🎉 *Withdrawal Successful!*\n\nThe funds are on their way to your wallet.\n🔎 [View TX](${mempoolBaseURL}/tx/${txid})`,
   askRefundAddress: `📍 Please send the Bitcoin address where you wish to receive your refund:`,
@@ -959,19 +969,29 @@ export default {
     `⏳ *Payment pending review*\n\n` +
     `You have already reported a payment for loan \`${loanId}\` and it is waiting for confirmation.\n\n` +
     `Please wait for the lender to review and process your current notice before attempting to report a new payment.`,
-  
+
   // ─────────────────────────── Backup ───────────────────────────
-  backupPrivateOnly: "⚠️ For your security, this command only works in a private chat with me.",
-  backupMenuText: "🔐 *Backup Center*\n\nWhat information do you want to export?",
+  backupPrivateOnly:
+    "⚠️ For your security, this command only works in a private chat with me.",
+  backupMenuText:
+    "🔐 *Backup Center*\n\nWhat information do you want to export?",
   btnBackupUser: "👤 User Backup (Keys)",
   btnBackupContract: "📜 Contract Backup (Multisig)",
-  backupUserWarning: "🚨 *SECURITY ZONE* 🚨\n\nYou are about to reveal your encrypted private key. Make sure you are in a private place.\n\n_No one from the team will ever ask for this data._",
+  backupUserWarning:
+    "🚨 *SECURITY ZONE* 🚨\n\nYou are about to reveal your encrypted private key. Make sure you are in a private place.\n\n_No one from the team will ever ask for this data._",
   btnRevealKeys: "👁️ Yes, show my keys",
   btnBack: "⬅️ Back",
   btnCancel: "❌ Cancel",
-  backupUserKeys: (pubkey: string, encryptedWif: string) => `🔑 *Your Backup Credentials*\n\n*Public Key:*\n\`${pubkey}\`\n\n*Encrypted Private Key (WIF):*\n||${encryptedWif}||\n\n_Tap the gray box to reveal your key and tap it again to copy it. Then delete this message._`,
+  backupUserKeys: (pubkey: string, encryptedWif: string) =>
+    `🔑 *Your Backup Credentials*\n\n*Public Key:*\n\`${pubkey}\`\n\n*Encrypted Private Key (WIF):*\n||${encryptedWif}||\n\n_Tap the gray box to reveal your key. Then delete this message._`,
   noActiveContractsBackup: "You have no active contracts to backup.",
-  backupContractsListText: "📜 *Contract Backup*\n\nSelect the contract you want to extract the technical information from:",
-  backupContractDetails: (id: string, escrowAddress: string, witnessScript: string) => `📜 *Backup for Contract #${id}*\n\nThis technical information allows you to interact with the contract manually and externally to the bot in case of an emergency.\n\n*Escrow Address:*\n\`${escrowAddress}\`\n\n*Witness Script (Hex):*\n\`${witnessScript}\`\n\n_Tap the boxes to copy. Keep this in a safe place._`,
+  backupContractsListText:
+    "📜 *Contract Backup*\n\nSelect the contract you want to extract the technical information from:",
+  backupContractDetails: (
+    id: string,
+    escrowAddress: string,
+    witnessScript: string,
+  ) =>
+    `📜 *Backup for Contract #${id}*\n\nThis technical information allows you to interact with the contract manually and externally to the bot in case of an emergency.\n\n*Escrow Address:*\n\`${escrowAddress}\`\n\n*Witness Script (Hex):*\n\`${witnessScript}\`\n\n_Tap the boxes to copy. Keep this in a safe place._`,
   btnBackToList: "⬅️ Back to list",
 };

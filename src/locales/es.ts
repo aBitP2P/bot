@@ -980,7 +980,7 @@ export default {
   btnRevealKeys: "👁️ Sí, mostrar mis llaves",
   btnBack: "⬅️ Volver",
   btnCancel: "❌ Cancelar",
-  backupUserKeys: (pubkey: string, encryptedWif: string) => `🔑 *Tus Credenciales de Respaldo*\n\n*Llave Pública:*\n\`${pubkey}\`\n\n*Llave Privada Encriptada (WIF):*\n||${encryptedWif}||\n\n_Toca el cuadro gris para revelar tu llave y tócalo de nuevo para copiarla. Luego elimina este mensaje._`,
+  backupUserKeys: (pubkey: string, encryptedWif: string) => `🔑 *Tus Credenciales de Respaldo*\n\n*Llave Pública:*\n\`${pubkey}\`\n\n*Llave Privada Encriptada (WIF):*\n||${encryptedWif}||\n\n_Toca el cuadro gris para revelar tu llave. Luego elimina este mensaje._`,
   noActiveContractsBackup: "No tienes contratos activos para respaldar.",
   backupContractsListText: "📜 *Respaldo de Contratos*\n\nSelecciona el contrato del cual quieres extraer la información técnica:",
   backupContractDetails: (id: string, escrowAddress: string, witnessScript: string) => `📜 *Respaldo del Contrato #${id}*\n\nEsta información técnica te permite interactuar con el contrato de forma manual y externa al bot en caso de emergencia.\n\n*Dirección Escrow:*\n\`${escrowAddress}\`\n\n*Witness Script (Hex):*\n\`${witnessScript}\`\n\n_Toca los recuadros para copiar. Guarda esto en un lugar seguro._`,

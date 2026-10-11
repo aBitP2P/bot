@@ -69,6 +69,7 @@ export default {
     `*⚠️ Uma chave privada vinculada ao seu usuário será gerada, a senha SERÁ NECESSÁRIA para resgatar as ordens.*\n` +
     `*NÃO PODE SER ALTERADA, certifique-se de digitá-la corretamente e anotá-la em um local seguro.*\n\n` +
     "🔑 *Por favor, digite sua senha para configurar seu usuário:*",
+  promptPasswordShort: "👇 Digite a senha no chat para assinar a transação:",
   confirmPassword: "👉 Para confirmar, digite a senha novamente: ",
   passwordsDoNotMatch:
     "❌ As senhas não coincidem. Tente novamente com /setpass",
@@ -408,7 +409,12 @@ export default {
     `Por favor, selecione como deseja assinar esta transação:`,
   btnTypePassword: "✍️ Inserir Senha",
   btnSignMiniapp: "🔐 Assinar no MiniApp",
+  btnTxSubmitted: "✅ Já enviei a transação",
   psbtSigningLoading: `⏳ *Coassinando e transmitindo para a rede...*`,
+  transactionDetected: "✅ Transação detectada na rede.",
+  noExternalTxDetected: "⏳ Ainda não detectei a transação na rede. Se você acabou de enviá-la, aguarde alguns segundos e tente novamente.",
+  successExternalSign: "✅ *Transação Externa Concluída*\n\nOs fundos foram movidos com sucesso pelo MiniApp ou uma carteira externa. O contrato foi encerrado.",
+  fundsAlreadyMoved: "⚠️ *Fundos já movidos*\n\nDetectamos que os fundos deste contrato já foram transferidos externamente na rede Bitcoin. O contrato foi encerrado.",
   claimSuccess: (txid: string) =>
     `🎉 *Saque Bem Sucedido!*\n\nOs fundos estão a caminho da sua carteira.\n🔎 [Ver TX](${mempoolBaseURL}/tx/${txid})`,
   askRefundAddress: `📍 Por favor, envie o endereço Bitcoin no qual você deseja receber seu reembolso:`,
@@ -975,7 +981,7 @@ export default {
   btnRevealKeys: "👁️ Sim, mostrar minhas chaves",
   btnBack: "⬅️ Voltar",
   btnCancel: "❌ Cancelar",
-  backupUserKeys: (pubkey: string, encryptedWif: string) => `🔑 *Suas Credenciais de Backup*\n\n*Chave Pública:*\n\`${pubkey}\`\n\n*Chave Privada Criptografada (WIF):*\n||${encryptedWif}||\n\n_Toque na caixa cinza para revelar sua chave e toque novamente para copiá-la. Depois exclua esta mensagem._`,
+  backupUserKeys: (pubkey: string, encryptedWif: string) => `🔑 *Suas Credenciais de Backup*\n\n*Chave Pública:*\n\`${pubkey}\`\n\n*Chave Privada Criptografada (WIF):*\n||${encryptedWif}||\n\n_Toque na caixa cinza para revelar sua chave. Depois exclua esta mensagem._`,
   noActiveContractsBackup: "Você não tem contratos ativos para fazer backup.",
   backupContractsListText: "📜 *Backup de Contratos*\n\nSelecione o contrato do qual deseja extrair as informações técnicas:",
   backupContractDetails: (id: string, escrowAddress: string, witnessScript: string) => `📜 *Backup do Contrato #${id}*\n\nEstas informações técnicas permitem que você interaja com o contrato manualmente e externamente ao bot em caso de emergência.\n\n*Endereço Escrow:*\n\`${escrowAddress}\`\n\n*Witness Script (Hex):*\n\`${witnessScript}\`\n\n_Toque nas caixas para copiar. Guarde isso em um local seguro._`,

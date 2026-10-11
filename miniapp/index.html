@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>aBitP2P Signer</title>
+    <link rel="stylesheet" href="style.css?v=2">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        .phishing-alert {
+            background-color: #fff3cd;
+            color: #856404;
+            border-bottom: 2px solid #ffeeba;
+            padding: 12px 15px;
+            text-align: center;
+            font-size: 13px;
+            line-height: 1.5;
+            position: sticky;
+            top: 0;
+            z-index: 9999;
+            width: 100%;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .phishing-alert strong {
+            color: #d32f2f;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="phishing-alert" id="phishing-alert">
+        ⚠️ <strong>SECURITY ALERT:</strong> Verify that you are accessing this from the official bot or that the URL in your browser is exactly <strong>abitp2p.ilumivo.com</strong>.
+    </div>
+    <br>
+    <main class="container">
+        <header>
+            <h1>aBitP2P Signer</h1>
+            <p id="env-indicator">Loading environment...</p>
+        </header>
+
+        <section class="card">
+            <div class="input-group">
+                <label for="psbt-hex">PSBT Hex (Unsigned Transaction)</label>
+                <textarea id="psbt-hex" placeholder="Paste the PSBT Hex here..." rows="4"></textarea>
+            </div>
+
+            <div class="input-group">
+                <label for="encrypted-wif">Encrypted WIF</label>
+                <input type="text" id="encrypted-wif" placeholder="salt:iv:authTag:ciphertext">
+            </div>
+
+            <div class="input-group">
+                <label for="password">Decryption Password</label>
+                <input type="password" id="password" placeholder="Your secure password">
+            </div>
+
+            <button id="btn-preview" class="btn primary">Analyze Transaction</button>
+        </section>
+
+        <section id="preview-section" class="card hidden">
+            <h2>Preview</h2>
+            <div id="tx-details" class="details-box"></div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button id="btn-sign-only" class="btn secondary" style="flex: 1; background-color: #4a5568; color: white;">Only Sign</button>
+                <button id="btn-sign-broadcast" class="btn danger" style="flex: 2;">Sign and Broadcast</button>
+            </div>
+
+            <div id="signed-hex-section" class="input-group hidden" style="margin-top: 15px;">
+                <label for="signed-tx-hex">Signed Raw Transaction (Hex)</label>
+                <textarea id="signed-tx-hex" rows="5" readonly onclick="this.select()" style="font-family: monospace; font-size: 11px; word-break: break-all; cursor: pointer;" title="Click to select all"></textarea>
+            </div>
+        </section>
+
+        <div id="status-message" class="status hidden"></div>
+    </main>
+
+    <!-- We will use a compiled bundle to avoid depending on external CDNs at runtime -->
+    <script src="dist.js?v=1p2"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const isTelegram = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
+            const hostname = window.location.hostname;
+            const isOfficialDomain = hostname === 'abitp2p.ilumivo.com' || hostname === "abitp2pbot.ilumivo.com";
+            const isLocalFile = window.location.protocol === 'file:' || hostname === '';
+            
+            if (!isTelegram && !isOfficialDomain && !isLocalFile && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+                const alertBox = document.getElementById('phishing-alert');
+                alertBox.style.backgroundColor = '#f8d7da';
+                alertBox.style.color = '#721c24';
+                alertBox.innerHTML = '🚨 <strong>DANGER!</strong> You are on an unofficial site (' + hostname + '). DO NOT enter your credentials.';
+            }
+        });
+    </script>
+</body>
+</html>

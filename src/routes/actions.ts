@@ -1,4 +1,4 @@
-import type { Telegraf } from "telegraf";
+import { Markup, type Telegraf } from "telegraf";
 import {
   resolveDispute,
   type SettleResolution,
@@ -11,7 +11,7 @@ import {
 } from "../handlers/orderHandler.js";
 import type { LoanRecord, BotContext } from "../types.js";
 import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
-import { OrderStatus } from "../shared/constants.js";
+import { LoanStatus, OrderStatus } from "../shared/constants.js";
 import { getUser } from "../db/users.js";
 import { getUserDict } from "../locales/index.js";
 import { safeDeleteMsg, safeRemoveMarkup } from "../utils/telegram.js";
@@ -38,6 +38,7 @@ import {
   getAccruedInterest,
   getContract,
   getUnifiedUserContractsForAction,
+  tryTransitionContract,
 } from "../db/contracts.js";
 import {
   handleLoanFullRepay,
@@ -45,6 +46,9 @@ import {
   handleRepaymentRequest,
 } from "../commands/repaid.js";
 import { confirmLoanPayment, rejectLoanPayment } from "../db/loans.js";
+import { fetchMempool } from "../core/bitcoin/network.js";
+import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
+import { cleanMD } from "../utils/format.js";
 
 export function setupActions(bot: Telegraf<BotContext>) {
   bot.action(/^take_loan_(.+)$/, (ctx) => handleTakeLoan(ctx, ctx.match[1]!));
@@ -244,6 +248,68 @@ export function setupActions(bot: Telegraf<BotContext>) {
     return handleRating(ctx, { orderId, stars, raterId: ctx.from!.id });
   });
 
+  bot.action(/^claim_internal_(.+)$/, async (ctx) => {
+    const contractId = ctx.match[1]!;
+    ctx.session.step = "CLAIM_PASSWORD";
+    ctx.session.claimOrderId = contractId;
+
+    await ctx.answerCbQuery();
+    await ctx.reply(ctx.dict.promptPasswordShort, { parse_mode: "Markdown" });
+  });
+
+  bot.action(/^verify_claim_(.+)$/, async (ctx) => {
+    const contractId = ctx.match[1]!;
+    const contract = await getContract(contractId);
+
+    if (!contract || !contract.data.escrowAddress) {
+      return ctx.answerCbQuery(ctx.dict.orderNotFound, { show_alert: true });
+    }
+
+    try {
+      const res = await fetchMempool(
+        `address/${contract.data.escrowAddress}/txs`,
+      );
+      if (!res.ok) throw new Error("Error consultando la red");
+      const txs = await res.json();
+
+      const wasSpent = txs.some((tx: any) =>
+        tx.vin.some(
+          (vin: any) =>
+            vin.prevout &&
+            vin.prevout.scriptpubkey_address === contract.data.escrowAddress,
+        ),
+      );
+
+      if (wasSpent) {
+        await ctx.answerCbQuery(ctx.dict.transactionDetected, {
+          show_alert: true,
+        });
+
+        const didTransition = await tryTransitionContract(
+          contract,
+          [contract.data.status as any],
+          contract.isLoan
+            ? LoanStatus.ExternallySigned
+            : OrderStatus.ExternallySigned,
+        );
+
+        if (didTransition) {
+          await ctx.editMessageText(
+            `✅ *Transacción Externa Completada*\n\nLos fondos han sido movidos exitosamente desde la MiniApp o una billetera externa. El contrato ha sido cerrado.`,
+            { parse_mode: "Markdown" },
+          );
+        }
+      } else {
+        await ctx.answerCbQuery(ctx.dict.noExternalTxDetected, {
+          show_alert: true,
+        });
+      }
+    } catch (error: any) {
+      await ctx.answerCbQuery("Ocurrió un error al verificar con la red.", {
+        show_alert: true,
+      });
+    }
+  });
   bot.action(
     /^settle_(buyer|seller|refund|loan_refund|loan_release|loan_liquidate|loan_active)_(.+)$/,
     (ctx) => {
@@ -252,6 +318,99 @@ export function setupActions(bot: Telegraf<BotContext>) {
       return resolveDispute(ctx, contractId, resolution);
     },
   );
+
+  bot.action("backup_user", async (ctx) => {
+    await ctx.editMessageText(ctx.dict.backupUserWarning, {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback(ctx.dict.btnRevealKeys, "reveal_user_keys")],
+        [Markup.button.callback(ctx.dict.btnBack, "back_to_backup_menu")],
+      ]),
+    });
+  });
+
+  bot.action("reveal_user_keys", async (ctx) => {
+    const pubkey = ctx.user.pubkey || "N/A";
+    const encryptedWif = ctx.user.encryptedWif || "N/A";
+
+    await ctx.editMessageText(cleanMD(ctx.dict.backupUserKeys(pubkey, encryptedWif)), {
+      parse_mode: "MarkdownV2",
+    });
+  });
+
+  bot.action("backup_orders_list", async (ctx) => {
+    const activeContracts = await getUnifiedUserContractsForAction(
+      ctx.from.id,
+      "BACKUP",
+    );
+
+    if (!activeContracts || activeContracts.length === 0) {
+      return ctx.answerCbQuery(ctx.dict.noActiveContractsBackup, {
+        show_alert: true,
+      });
+    }
+    const keyboard = buildOrderSelectKeyboard(
+      activeContracts,
+      "backup_contract",
+    );
+    keyboard.reply_markup.inline_keyboard.push([
+      Markup.button.callback(ctx.dict.btnBack, "back_to_backup_menu"),
+    ]);
+    await ctx.editMessageText(ctx.dict.backupContractsListText, {
+      parse_mode: "Markdown",
+      ...keyboard,
+    });
+  });
+
+  bot.action(/^backup_contract_(.+)$/, async (ctx) => {
+    const contractId = ctx.match[1]!;
+    const contract = await getContract(contractId);
+
+    if (!contract) {
+      return ctx.answerCbQuery(ctx.dict.orderNotFound, { show_alert: true });
+    }
+
+    const witnessScript = contract.data.witnessScript || "N/A";
+    const escrowAddress = contract.data.escrowAddress || "N/A";
+
+    await ctx.editMessageText(
+      ctx.dict.backupContractDetails(contractId, escrowAddress, witnessScript),
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              ctx.dict.btnBackToList,
+              "backup_orders_list",
+            ),
+          ],
+          [Markup.button.callback(ctx.dict.btnCancel, "cancel_action")],
+        ]),
+      },
+    );
+  });
+
+  bot.action("back_to_backup_menu", async (ctx) => {
+    await ctx.editMessageText(ctx.dict.backupMenuText, {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback(ctx.dict.btnBackupUser, "backup_user")],
+        [
+          Markup.button.callback(
+            ctx.dict.btnBackupContract,
+            "backup_orders_list",
+          ),
+        ],
+        [Markup.button.callback(ctx.dict.btnCancel, "cancel_action")],
+      ]),
+    });
+  });
+
+  bot.action("cancel_action", async (ctx: BotContext) => {
+    ctx.session = { step: "IDLE", draft: {} };
+    await safeDeleteMsg(ctx);
+    await ctx.reply(ctx.dict.cancelled);
+  });
 
   bot.on("callback_query", (ctx) => ctx.answerCbQuery());
 }

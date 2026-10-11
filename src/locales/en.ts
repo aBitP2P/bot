@@ -32,16 +32,17 @@ export default {
     `/listorders — View your active orders\n\n` +
     `⚡️ *Order Management* (Add the ID)\n` +
     `/fiatsent — Notify payment sent\n` +
-    `/release — Release funds to buyer\n` +
+    `/release — Release funds to the buyer\n` +
     `/claim — Claim funds or refund\n` +
     `/cancel — Cancel an order\n` +
-    `/dispute — Open dispute with moderation\n` +
+    `/dispute — Open a dispute with moderation\n` +
     `_Ex: /release ab12cd-34ef56_\n\n` +
     `⚙️ *Account & System*\n` +
     `/setpass — Encrypt your profile with a password\n` +
+    `/backup — Export your keys and emergency contracts\n` +
     `/setlang — Change language\n` +
-    "/fees - Check current network fees for your orders\n" +
-    "/setfee - Set custom network fee to be used\n" +
+    "/fees - Check network fees for your orders\n" +
+    "/setfee - Set custom network fee\n" +
     `/exit — Cancel the current action\n\n` +
     `📢 Channel: ${Strings.OrderChannelTag}\n` +
     `💬 Group: ${Strings.GeneralChatTag}`,
@@ -77,7 +78,8 @@ export default {
   passwordAlreadySet: "❌ You have already set a password.",
   passwordSetSuccess:
     `✅ *Password successfully set.* Profile encrypted and ready to use.\n\n` +
-    "_Keep in mind that this password is only used to sign withdrawals on the bot. The funds you acquire will be sent directly to the external address you provide; the bot does not custody your funds._",
+    `_Note that this password is only for signing withdrawals in the bot. The funds you acquire will be sent directly to the external address you provide; the bot does not custody your funds._\n\n` +
+    `⚠️ *IMPORTANT:* Your account is non-custodial. If you lose access to Telegram, you will lose your funds. Run /backup right now to save your encrypted private key.`,
   invalidLanguage: "❌ Invalid language.",
   selectLanguage: "👇 Select your preferred language",
   languageUpdateSuccess: "✅ Language updated successfully.",
@@ -304,12 +306,15 @@ export default {
     `✅ *Deposit Confirmed!*\n\n` +
     `The funds are secured in the multisig address.\n\n` +
     `🗣 **Contact the seller here:** ${sellerContact}\n\n` +
-    `_Instructions: Make the payment using the agreed method. Once the money is transferred, execute the command_ \`/fiatsent ${orderId}\` _to notify the seller._`,
+    `_Instructions: Make the payment using the agreed method. Once the money is transferred, execute the command_ \`/fiatsent ${orderId}\` _to notify the seller._\n\n` +
+    `💡 *Security tip:* Use /backup to save the technical data of this order in case of emergency.`,
+
   escrowConfirmedSeller: (buyerContact: string, orderId: string) =>
     `✅ *Deposit Confirmed!*\n\n` +
     `Your funds are secured in the multisig address.\n\n` +
     `🗣 **Contact the buyer here:** ${buyerContact}\n\n` +
-    `_Instructions: Wait for the buyer's payment. Once you verify the money is in your account, execute the command_ \`/release ${orderId}\` _to release the funds._`,
+    `_Instructions: Wait for the buyer's payment. Once you verify the money is in your account, execute the command_ \`/release ${orderId}\` _to release the funds._\n\n` +
+    `💡 *Security tip:* Use /backup to save the technical data of this order in case of emergency.`,
   feesList: (
     botFee: string,
     feesData: MempoolFeesData,
@@ -380,7 +385,7 @@ export default {
     newAmountFiat: string,
     fiatCode: string,
   ) =>
-    `ℹ️ Your range order has been partially completed. A new order (\`${newOrderId}\`) for the remaining balance of *${newAmountFiat} ${fiatCode}* has been republished in${Strings.OrderChannelTag}.`,
+    `ℹ️ Your range order has been partially completed. A new order (\`${newOrderId}\`) for the remaining balance of *${newAmountFiat} ${fiatCode}* has been republished in ${Strings.OrderChannelTag}.`,
 
   // --------------------------- Rating -----------------------------------
   rateCounterpartyMessage: "👉 Please rate your counterparty:",
@@ -772,10 +777,11 @@ export default {
     "⏳ *Loan Accepted.*\n\nNow waiting for the borrower to deposit the collateral Bitcoin into the multisig vault. We will notify you when the funds are secured on the blockchain.",
 
   loanCollateralSecuredBorrower: (lenderContact: string, loanId: string) =>
-    `✅ *Collateral locked and confirmed!* (\`${loanId}\`)\n\n` +
+    `✅ *Collateral secured and confirmed!* (\`${loanId}\`)\n\n` +
     `Your Bitcoin collateral is secured in the multisig vault.\n\n` +
     `🗣 **Contact the lender here:** ${lenderContact}\n\n` +
-    `_The lender has been notified to send you the FIAT principal. We will send you a message when they mark the disbursement as sent._`,
+    `_The lender has been notified to send you the FIAT capital. We will send you a message when they mark the disbursement as sent._\n\n` +
+    `💡 *Security tip:* Use /backup to save the technical data of this contract.`,
 
   loanCollateralSecuredLender: (
     borrowerContact: string,
@@ -783,13 +789,14 @@ export default {
     fiatCode: string,
     loanId: string,
   ) =>
-    `✅ *Collateral locked and confirmed!*\n\n` +
+    `✅ *Collateral secured and confirmed!*\n\n` +
     `The borrower has successfully secured their Bitcoin in the multisig vault.\n\n` +
     `🗣 **Contact the borrower here:** ${borrowerContact}\n\n` +
     `**INSTRUCTIONS:**\n` +
-    `Please proceed to disburse the agreed principal of **${fiatAmount} ${fiatCode}** to the borrower via their payment method.\n\n` +
+    `Please proceed to disburse the agreed capital of **${fiatAmount} ${fiatCode}** to the borrower via their payment method.\n\n` +
     `Once you send the money, execute this command to start the loan clock:\n` +
-    `\`/fiatsent ${loanId}\``,
+    `\`/fiatsent ${loanId}\`\n\n` +
+    `💡 *Security tip:* Use /backup to save the technical data of this contract.`,
   loanFiatSentToLender: (loanId: string) =>
     `✅ You have marked the loan disbursement \`${loanId}\` as sent.\n\n` +
     `The borrower has been notified to check their account. The contract will become **ACTIVE** and the timer will start **only** when they confirm receipt of the money.\n\n` +

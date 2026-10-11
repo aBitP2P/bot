@@ -24,7 +24,7 @@ export async function getUserOrders(userId: number) {
     .where(
       and(
         or(eq(orders.creatorId, userId), eq(orders.takerId, userId)),
-        notInArray(orders.status, [OrderStatus.Completed, OrderStatus.Cancelled, OrderStatus.Refunded]),
+        notInArray(orders.status, TERMINAL_ORDER_STATUSES),
         or(ne(orders.status, OrderStatus.Pending), eq(orders.creatorId, userId)),
       ),
     );

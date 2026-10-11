@@ -1,4 +1,5 @@
-import { getContract } from "../db/contracts.js";
+import * as bitcoin from "bitcoinjs-lib";
+import { getContract, tryTransitionContract } from "../db/contracts.js";
 import type {
   BotContext,
   CallbackContext,
@@ -8,14 +9,17 @@ import type {
 } from "../types.js";
 import type { UnifiedContract } from "../db/contracts.js";
 import {
-  getLiveMinerFee,
-  checkEscrowFunding,
-  DUST_LIMIT,
+  type PayoutAction,
+  buildUnsignedPayoutPsbt,
+  network,
+  deriveOrderBotKeypair,
+  checkIfExternallySpent,
 } from "../core/bitcoin/index.js";
 import { OrderStatus, LoanStatus } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
-import { getBotFeePercent } from "../config/fees.js";
 import { getUnifiedUserContractsForAction } from "../db/contracts.js";
+import { Markup } from "telegraf";
+import { safeDeleteMsg } from "../utils/telegram.js";
 
 export async function claimCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -43,6 +47,7 @@ export async function initiateClaim(
   ctx: CallbackContext | CommandContext,
   contractId: string,
 ) {
+  if (ctx.callbackQuery) await safeDeleteMsg(ctx);
   const userId = ctx.from.id;
   const dict = ctx.dict;
 
@@ -57,7 +62,10 @@ export async function initiateClaim(
     contract.data.status === LoanStatus.Refundable;
 
   const isFirstLiquidation =
-    contract.isLoan && [LoanStatus.Liquidatable, LoanStatus.Expired].includes(contract.data.status! as any);
+    contract.isLoan &&
+    [LoanStatus.Liquidatable, LoanStatus.Expired].includes(
+      contract.data.status! as any,
+    );
   const isSecondLiquidation =
     contract.isLoan && contract.data.status === LoanStatus.PartiallyLiquidated;
   const isLiquidation = isFirstLiquidation || isSecondLiquidation;
@@ -120,103 +128,85 @@ export async function initiateClaim(
 
   return startClaimPasswordFlow(ctx, contract, refundAddress);
 }
+
 export async function startClaimPasswordFlow(
   ctx: BotContext,
   contract: UnifiedContract,
   receivingAddress: string,
 ) {
-  const dict = ctx.dict;
-  const userId = ctx.from?.id;
+  const isSpent = await checkIfExternallySpent(
+    contract,
+    contract.amountSatsOrCollateral,
+  );
+  
+  if (isSpent) {
+    const didTransition = await tryTransitionContract(
+      contract,
+      [contract.data.status as any],
+      contract.isLoan
+        ? LoanStatus.ExternallySigned
+        : OrderStatus.ExternallySigned,
+    );
 
-  const isFirstLiquidation = contract.isLoan && contract.data.status === LoanStatus.Liquidatable;
-  const isSecondLiquidation = contract.isLoan && contract.data.status === LoanStatus.PartiallyLiquidated;
-  const isRefund =
-    contract.data.status === OrderStatus.Refundable ||
-    contract.data.status === LoanStatus.Refundable;
-
-  const baseSats = contract.isLoan
-    ? (contract.data as LoanRecord).collateralSats!
-    : (contract.data as OrderRecord).amountSats;
-
-  const funding = await checkEscrowFunding(contract.data.escrowAddress!);
-  const totalFundedSats = funding?.totalFundedSats ?? baseSats;
-
-  let minerFeeSats = 0;
-  let finalAmount = 0;
-  let feeRate = 0;
-
-  if (isFirstLiquidation) {
-    const lenderBaseShare = Math.floor(baseSats * 0.90);
-    const baseBotFee = Math.floor(baseSats * 0.05);
-    const borrowerLeftover = totalFundedSats - lenderBaseShare - baseBotFee;
-
-    let feeEstimation = await getLiveMinerFee({
-      escrowAddress: contract.data.escrowAddress!,
-      outputCount: 3,
-      customFeeRate: ctx.user.customFee,
-    });
-
-    if (borrowerLeftover < DUST_LIMIT) {
-      feeEstimation = await getLiveMinerFee({
-        escrowAddress: contract.data.escrowAddress!,
-        outputCount: 2,
-        customFeeRate: ctx.user.customFee,
-      });
+    if (didTransition) {
+      if (ctx.callbackQuery) {
+        await ctx.editMessageText(ctx.dict.fundsAlreadyMoved, { parse_mode: "Markdown" });
+      } else {
+        await ctx.reply(ctx.dict.fundsAlreadyMoved, { parse_mode: "Markdown" });
+      }
     }
-
-    minerFeeSats = feeEstimation.satsAmount;
-    feeRate = feeEstimation.feeRate;
-
-    const isLender = userId === contract.sellerOrLenderId;
-    finalAmount = isLender 
-      ? lenderBaseShare - minerFeeSats 
-      : borrowerLeftover - minerFeeSats;
-
-  } else if (isSecondLiquidation) {
-    let feeEstimation = await getLiveMinerFee({
-      escrowAddress: contract.data.escrowAddress!,
-      outputCount: 1,
-      customFeeRate: ctx.user.customFee,
-    });
-
-    minerFeeSats = feeEstimation.satsAmount;
-    feeRate = feeEstimation.feeRate;
-    
-    finalAmount = totalFundedSats - minerFeeSats;
-
-  } else {
-    const botFeePercent = getBotFeePercent(baseSats);
-    let outputCount = 1;
-
-    if (!isRefund) {
-      const buyerFee = Math.floor((baseSats * (botFeePercent / 100)) / 2);
-      const botOutputEstimate = totalFundedSats - baseSats + buyerFee;
-      outputCount = botOutputEstimate >= DUST_LIMIT ? 2 : 1;
-    }
-
-    const feeEstimation = await getLiveMinerFee({
-      escrowAddress: contract.data.escrowAddress!,
-      outputCount,
-      customFeeRate: ctx.user.customFee,
-    });
-
-    minerFeeSats = feeEstimation.satsAmount;
-    feeRate = feeEstimation.feeRate;
-
-    if (isRefund) {
-      finalAmount = totalFundedSats - minerFeeSats;
-    } else {
-      const totalBotFeeSats = Math.floor(baseSats * (botFeePercent / 100));
-      const buyerFeeSats = Math.floor(totalBotFeeSats / 2);
-      finalAmount = baseSats - buyerFeeSats - minerFeeSats;
-    }
+    return;
   }
 
-  ctx.session.step = "CLAIM_PASSWORD";
-  ctx.session.claimOrderId = contract.data.id;
+  let actionType: PayoutAction = "RELEASE";
+  if (
+    contract.data.status === OrderStatus.Refundable ||
+    contract.data.status === LoanStatus.Refundable
+  ) {
+    actionType = "REFUND";
+  } else if (
+    contract.isLoan &&
+    (contract.data.status === LoanStatus.Liquidatable ||
+      contract.data.status === LoanStatus.PartiallyLiquidated)
+  ) {
+    actionType = "LIQUIDATION";
+  }
 
-  await ctx.reply(
-    dict.askClaimPassword(minerFeeSats, finalAmount, receivingAddress, feeRate),
-    { parse_mode: "Markdown" },
-  );
+  try {
+    const { psbtHex, minerFee, finalAmount, feeRate } = await buildUnsignedPayoutPsbt(
+      contract,
+      actionType,
+      ctx.user.customFee,
+      ctx.from?.id,
+      receivingAddress,
+    );
+
+    const psbt = bitcoin.Psbt.fromHex(psbtHex, { network });
+    const escrowBotKeypair = deriveOrderBotKeypair(contract.data.id);
+    psbt.signAllInputs(escrowBotKeypair);
+
+    const partiallySignedHex = psbt.toHex();
+    const networkStr = network.bech32 === "tb" ? "testnet" : "mainnet";
+    const miniappUrl = `https://abitp2pbot.ilumivo.com/?network=${networkStr}&psbt=${partiallySignedHex}`;
+
+    await ctx.reply(
+      ctx.dict.showClaimPreview(minerFee, finalAmount, receivingAddress, feeRate!),
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              ctx.dict.btnTypePassword,
+              `claim_internal_${contract.data.id}`,
+            ),
+          ],
+          [Markup.button.webApp(ctx.dict.btnSignMiniapp, miniappUrl)],
+          [Markup.button.callback(ctx.dict.btnTxSubmitted, `verify_claim_${contract.data.id}`)],
+        ]),
+      },
+    );
+  } catch (error: any) {
+    console.error(error);
+    await ctx.reply(ctx.dict.errorGeneratingPsbt);
+  }
 }

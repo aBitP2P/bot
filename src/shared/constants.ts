@@ -20,6 +20,7 @@ export const OrderStatus = {
   Completed: "COMPLETED",
   Refunded: "REFUNDED",
   Cancelled: "CANCELLED",
+  ExternallySigned: "EXTERNALLY_SIGNED"
 } as const;
 
 export const LoanStatus = {
@@ -47,6 +48,7 @@ export const LoanStatus = {
   Refunded: "LOAN_REFUNDED", 
   Cancelled: "LOAN_CANCELLED", 
   Dispute: "LOAN_DISPUTE", 
+  ExternallySigned: "LOAN_EXTERNALLY_SIGNED"
 } as const;
 
 export const LoanPaymentStatus = {
@@ -67,6 +69,7 @@ export const TERMINAL_ORDER_STATUSES = [
   OrderStatus.Cancelled,
   OrderStatus.Refunded,
   OrderStatus.Dispute,
+  OrderStatus.ExternallySigned
 ];
 
 export const TERMINAL_LOAN_STATUSES = [
@@ -78,6 +81,7 @@ export const TERMINAL_LOAN_STATUSES = [
   LoanStatus.Refunded,
   LoanStatus.Cancelled,
   LoanStatus.Dispute,
+  LoanStatus.ExternallySigned
 ];
 
 export type TOrderStatus = typeof OrderStatus[keyof typeof OrderStatus];

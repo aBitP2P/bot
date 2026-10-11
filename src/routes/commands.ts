@@ -42,6 +42,7 @@ export function setupCommands(bot: Telegraf<BotContext>) {
   bot.command("setlang", c.setlangCommand);
   bot.command("fees", c.feesCommand);
   bot.command("setfee", c.setFeeCommand);
+  bot.command("backup", c.backupCommand);
   
   bot.command("repaid", betaGuard(c.repaidCommand));
   bot.command("loanstatus", betaGuard(c.loanStatusCommand));

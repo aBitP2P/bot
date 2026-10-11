@@ -25,7 +25,7 @@ export const OrderStatusMap: Record<string, string> = {
 export default {
   // ─────────────────────────── General & UI ───────────────────────────
   helpMessage: () =>
-    `🤖 *aBitP2P — Central de Ajuda*\n\n` +
+    `🤖 *aBitP2P — Centro de Ajuda*\n\n` +
     `🛒 *Mercado*\n` +
     `/buy — Comprar Bitcoin\n` +
     `/sell — Vender Bitcoin\n` +
@@ -33,15 +33,16 @@ export default {
     `⚡️ *Gestão de Ordens* (Adicione o ID)\n` +
     `/fiatsent — Notificar pagamento enviado\n` +
     `/release — Liberar fundos ao comprador\n` +
-    `/claim — Resgatar fundos ou reembolso\n` +
+    `/claim — Reivindicar fundos ou reembolso\n` +
     `/cancel — Cancelar uma ordem\n` +
-    `/dispute — Abrir disputa com moderação\n` +
+    `/dispute — Abrir disputa com a moderação\n` +
     `_Ex: /release ab12cd-34ef56_\n\n` +
     `⚙️ *Conta e Sistema*\n` +
     `/setpass — Criptografar seu perfil com uma senha\n` +
+    `/backup — Exporte suas chaves e contratos de emergência\n` +
     `/setlang — Mudar idioma\n` +
-    "/fees - Verifique como estão as taxas de rede para suas ordens\n" +
-    "/setfee - Defina a taxa de rede a ser usada\n" +
+    "/fees - Verifique as taxas de rede para suas ordens\n" +
+    "/setfee - Definir taxa de rede personalizada\n" +
     `/exit — Cancelar a ação atual\n\n` +
     `📢 Canal: ${Strings.OrderChannelTag}\n` +
     `💬 Grupo: ${Strings.GeneralChatTag}`,
@@ -76,7 +77,8 @@ export default {
   passwordAlreadySet: "❌ Você já possui uma senha definida.",
   passwordSetSuccess:
     `✅ *Senha configurada com sucesso.* Perfil criptografado e pronto para uso.\n\n` +
-    "_Lembre-se de que esta senha serve apenas para assinar saques no bot. Os fundos que você adquirir serão enviados diretamente para o endereço externo que você fornecer; o bot não custodia seus fundos._",
+    `_Observe que esta senha serve apenas para assinar saques no bot. Os fundos que você adquirir serão enviados diretamente para o endereço externo que você fornecer; o bot não custodia seus fundos._\n\n` +
+    `⚠️ *IMPORTANTE:* Sua conta não é custodiada. Se você perder o acesso ao Telegram, perderá seus fundos. Execute /backup agora mesmo para salvar sua chave privada criptografada.`,
   invalidLanguage: "❌ Idioma inválido.",
   selectLanguage: "👇 Selecione seu idioma preferido",
   languageUpdateSuccess: "✅ Idioma atualizado com sucesso.",
@@ -301,14 +303,17 @@ export default {
     "❌ *Ordem cancelada*\n\nO depósito foi alterado na rede antes de ser confirmado. O acordo foi abortado para sua segurança.",
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *Depósito Confirmado!*\n\n` +
-    `Os fundos estão assegurados no endereço multisig.\n\n` +
+    `Os fundos estão garantidos no endereço multisig.\n\n` +
     `🗣 **Contate o vendedor aqui:** ${sellerContact}\n\n` +
-    `_Instruções: Faça o pagamento pelo método acordado. Assim que transferir o dinheiro, execute o comando_ \`/fiatsent ${orderId}\` _para notificar o vendedor._`,
+    `_Instruções: Faça o pagamento pelo método acordado. Assim que o dinheiro for transferido, execute o comando_ \`/fiatsent ${orderId}\` _para notificar o vendedor._\n\n` +
+    `💡 *Dica de segurança:* Use /backup para salvar os dados técnicos desta ordem em caso de emergência.`,
+
   escrowConfirmedSeller: (buyerContact: string, orderId: string) =>
     `✅ *Depósito Confirmado!*\n\n` +
-    `Seus fundos estão assegurados no endereço multisig.\n\n` +
+    `Seus fundos estão garantidos no endereço multisig.\n\n` +
     `🗣 **Contate o comprador aqui:** ${buyerContact}\n\n` +
-    `_Instruções: Aguarde o pagamento do comprador. Assim que você verificar que o dinheiro está na sua conta, execute o comando_ \`/release ${orderId}\` _para liberar os fundos._`,
+    `_Instruções: Aguarde o pagamento do comprador. Assim que verificar que o dinheiro está na sua conta, execute o comando_ \`/release ${orderId}\` _para liberar os fundos._\n\n` +
+    `💡 *Dica de segurança:* Use /backup para salvar os dados técnicos desta ordem em caso de emergência.`,
   feesList: (
     botFee: string,
     feesData: MempoolFeesData,
@@ -382,7 +387,7 @@ export default {
     newAmountFiat: string,
     fiatCode: string,
   ) =>
-    `ℹ️ Sua ordem com faixa de valor foi parcialmente concluída. Uma nova ordem (\`${newOrderId}\`) pelo saldo restante de *${newAmountFiat} ${fiatCode}* foi republicada no${Strings.OrderChannelTag}.`,
+    `ℹ️ Sua ordem com faixa de valor foi parcialmente concluída. Uma nova ordem (\`${newOrderId}\`) pelo saldo restante de *${newAmountFiat} ${fiatCode}* foi republicada no ${Strings.OrderChannelTag}.`,
 
   // --------------------------- Rating -----------------------------------
   rateCounterpartyMessage: "👉 Por favor, avalie sua contraparte:",
@@ -775,9 +780,10 @@ export default {
 
   loanCollateralSecuredBorrower: (lenderContact: string, loanId: string) =>
     `✅ *Garantia bloqueada e confirmada!* (\`${loanId}\`)\n\n` +
-    `Seu colateral em Bitcoin está assegurado no cofre multisig.\n\n` +
+    `Sua garantia em Bitcoin está segura no cofre multisig.\n\n` +
     `🗣 **Contate o credor aqui:** ${lenderContact}\n\n` +
-    `_O credor foi notificado para enviar o capital FIAT. Enviaremos uma mensagem quando ele marcar o desembolso como enviado._`,
+    `_O credor foi notificado para lhe enviar o capital em FIAT. Enviaremos uma mensagem quando ele marcar o desembolso como enviado._\n\n` +
+    `💡 *Dica de segurança:* Use /backup para salvar os dados técnicos deste contrato.`,
 
   loanCollateralSecuredLender: (
     borrowerContact: string,
@@ -786,12 +792,13 @@ export default {
     loanId: string,
   ) =>
     `✅ *Garantia bloqueada e confirmada!*\n\n` +
-    `O tomador garantiu com sucesso seu Bitcoin no cofre multisig.\n\n` +
-    `🗣 **Contate o tomador aqui:** ${borrowerContact}\n\n` +
+    `O mutuário garantiu com sucesso seu Bitcoin no cofre multisig.\n\n` +
+    `🗣 **Contate o mutuário aqui:** ${borrowerContact}\n\n` +
     `**INSTRUÇÕES:**\n` +
-    `Por favor, proceda a desembolsar o capital acordado de **${fiatAmount} ${fiatCode}** ao tomador por meio de seu método de pagamento.\n\n` +
-    `Assim que enviar o dinheiro, execute este comando para iniciar o relógio do empréstimo:\n` +
-    `\`/fiatsent ${loanId}\``,
+    `Por favor, prossiga para desembolsar o capital acordado de **${fiatAmount} ${fiatCode}** para o mutuário através de seu método de pagamento.\n\n` +
+    `Assim que você enviar o dinheiro, execute este comando para iniciar o relógio do empréstimo:\n` +
+    `\`/fiatsent ${loanId}\`\n\n` +
+    `💡 *Dica de segurança:* Use /backup para salvar os dados técnicos deste contrato.`,
   loanFiatSentToLender: (loanId: string) =>
     `✅ Você marcou o desembolso do empréstimo \`${loanId}\` como enviado.\n\n` +
     `O tomador foi notificado para verificar sua conta. O contrato passará a estar **ATIVO** e o tempo começará a contar **apenas** quando ele confirmar o recebimento do dinheiro.\n\n` +

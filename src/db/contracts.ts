@@ -1,11 +1,11 @@
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import { db } from "./index.js";
 import { orders, loans } from "./schema.js";
 import { tryTransitionOrderStatus } from "./orders.js";
 import { tryTransitionLoanStatus } from "./loans.js";
 import type { OrderRecord, LoanRecord } from "../types.js";
 import { getParties, getLoanParties } from "../utils/parties.js";
-import { LoanStatus, OrderStatus } from "../shared/constants.js";
+import { LoanStatus, OrderStatus, TERMINAL_LOAN_STATUSES, TERMINAL_ORDER_STATUSES } from "../shared/constants.js";
 
 export type UnifiedContract<T = OrderRecord | LoanRecord> = {
   isLoan: boolean;
@@ -16,7 +16,9 @@ export type UnifiedContract<T = OrderRecord | LoanRecord> = {
   amountSatsOrCollateral: number;
 };
 
-export async function getContract<T = OrderRecord | LoanRecord>(id: string): Promise<UnifiedContract<T> | null> {
+export async function getContract<T = OrderRecord | LoanRecord>(
+  id: string,
+): Promise<UnifiedContract<T> | null> {
   const orderList = await db
     .select()
     .from(orders)
@@ -126,7 +128,7 @@ export async function tryResolveDisputeContract(
 // Helper para extraer contratos activos de un usuario (unifica orders y loans)
 export async function getUnifiedUserContractsForAction(
   userId: number,
-  actionType: "FIATSENT" | "CLAIM" | "REPAY",
+  actionType: "FIATSENT" | "CLAIM" | "REPAY" | "BACKUP",
 ): Promise<any[]> {
   let validOrders: OrderRecord[] = [];
   let validLoans: LoanRecord[] = [];
@@ -194,7 +196,7 @@ export async function getUnifiedUserContractsForAction(
               LoanStatus.Refundable,
               LoanStatus.Liquidatable,
               LoanStatus.PartiallyLiquidated,
-              LoanStatus.Expired
+              LoanStatus.Expired,
             ]),
             or(
               and(eq(loans.type, "LEND"), eq(loans.takerId, userId)),
@@ -222,6 +224,26 @@ export async function getUnifiedUserContractsForAction(
             and(eq(loans.type, "LEND"), eq(loans.takerId, userId)),
             and(eq(loans.type, "BORROW"), eq(loans.creatorId, userId)),
           ),
+        ),
+      );
+  } else if (actionType === "BACKUP") {
+    validOrders = await db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          notInArray(orders.status, TERMINAL_ORDER_STATUSES),
+          or(eq(orders.creatorId, userId), eq(orders.takerId, userId)),
+        ),
+      );
+
+    validLoans = await db
+      .select()
+      .from(loans)
+      .where(
+        and(
+          notInArray(loans.status, TERMINAL_LOAN_STATUSES),
+          or(eq(loans.creatorId, userId), eq(loans.takerId, userId)),
         ),
       );
   }
@@ -257,10 +279,10 @@ export function getFiatPaymentParties(contract: UnifiedContract) {
 }
 
 export function getAccruedInterest(loan: LoanRecord) {
-  const baseAmount = loan.fiatAmountLocked!
-  const IR = (loan.apr / 100) / 12;
+  const baseAmount = loan.fiatAmountLocked!;
+  const IR = loan.apr / 100 / 12;
 
-  const billableMonths = loan.durationMonthsLocked!; 
+  const billableMonths = loan.durationMonthsLocked!;
 
   return baseAmount * IR * billableMonths;
 }

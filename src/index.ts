@@ -3,14 +3,14 @@ import { Telegraf, session } from "telegraf";
 import { type BotContext, type SessionData } from "./types.js";
 import {
   startEscrowMonitor,
-  startOrderTimeoutsMonitor,
-  startLoanEscrowMonitor
+  startTimeoutsMonitor,
 } from "./services/index.js";
 import { userMiddleware } from "./middlewares/auth.js";
 import { Strings } from "./shared/constants.js";
 import { setupActions } from "./routes/actions.js";
 import { setupCommands } from "./routes/commands.js";
 import { setupMessages } from "./routes/messages.js";
+import { startLoansMonitor } from "./services/monitors/loansMonitor.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -58,9 +58,9 @@ bot.catch((err, ctx) => {
 });
 
 startEscrowMonitor(bot);
-startOrderTimeoutsMonitor(bot);
+startLoansMonitor(bot);
+startTimeoutsMonitor(bot);
 
-startLoanEscrowMonitor(bot);
 bot.launch();
 
 process.once("SIGINT", () => bot.stop("SIGINT"));

@@ -3,6 +3,8 @@ export const Strings = {
   GeneralChatTag: "@aBitP2PGeneral\\_es",
 };
 
+export const LTV_LIQUIDATION_THRESHOLD = 90;
+
 export const OrderStatus = {
   Pending: "PENDING",
   WaitingTakerConfirmation: "WAITING_TAKER_CONFIRMATION",
@@ -21,80 +23,69 @@ export const OrderStatus = {
 } as const;
 
 export const LoanStatus = {
-  Pending: "PENDING", 
-  WaitingTakerConfirmation: "WAITING_TAKER_CONFIRMATION",
-  WaitingMakerConfirmation: "WAITING_MAKER_CONFIRMATION",
-  CancelRequested: "CANCEL_REQUESTED",
+  Pending: "LOAN_PENDING", 
+  WaitingTakerConfirmation: "LOAN_WAITING_TAKER_CONFIRMATION",
+  WaitingMakerConfirmation: "LOAN_WAITING_MAKER_CONFIRMATION",
+  CancelRequested: "LOAN_CANCEL_REQUESTED",
 
-  WaitingCollateral: "WAITING_COLLATERAL", 
-  CollateralUnconfirmed: "COLLATERAL_UNCONFIRMED", 
+  WaitingCollateral: "LOAN_WAITING_COLLATERAL", 
+  CollateralUnconfirmed: "LOAN_COLLATERAL_UNCONFIRMED", 
 
-  WaitingDisbursement: "WAITING_DISBURSEMENT", 
-  DisbursementSent: "DISBURSEMENT_SENT", 
+  WaitingDisbursement: "LOAN_WAITING_DISBURSEMENT", 
+  DisbursementSent: "LOAN_DISBURSEMENT_SENT", 
 
-  Active: "ACTIVE", 
+  Active: "LOAN_ACTIVE", 
 
-  RepaymentSent: "REPAYMENT_SENT", 
-
-  Releasable: "RELEASABLE", 
-  Refundable: "REFUNDABLE", 
-  Liquidatable: "LIQUIDATABLE", 
+  Releasable: "LOAN_RELEASABLE", 
+  Refundable: "LOAN_REFUNDABLE", 
+  Liquidatable: "LOAN_LIQUIDATABLE", 
+  PartiallyLiquidated: "LOAN_PARTIALLY_LIQUIDATED",
+  Expired: "LOAN_EXPIRED",
   
-  Completed: "COMPLETED", 
-  Liquidated: "LIQUIDATED", 
-  Refunded: "REFUNDED", 
-  Cancelled: "CANCELLED", 
-  Dispute: "DISPUTE", 
+  Completed: "LOAN_COMPLETED", 
+  Liquidated: "LOAN_LIQUIDATED", 
+  Refunded: "LOAN_REFUNDED", 
+  Cancelled: "LOAN_CANCELLED", 
+  Dispute: "LOAN_DISPUTE", 
 } as const;
+
+export const LoanPaymentStatus = {
+  Pending: "PENDING",
+  Confirmed: "CONFIRMED",
+  Rejected: "REJECTED"
+}
 
 export const LoanTypes = {
   Lend: "LEND",
   Borrow: "BORROW"
-}
+};
 
-export const TERMINAL_STATUSES = [
+export const TERMINAL_ORDER_STATUSES = [
   OrderStatus.Releasable,
   OrderStatus.Refundable,
   OrderStatus.Completed,
   OrderStatus.Cancelled,
   OrderStatus.Refunded,
   OrderStatus.Dispute,
-  LoanStatus.Liquidated,
-  LoanStatus.Liquidatable
 ];
 
-export const OrderStatusLabelsES: Record<string, string> = {
-  [OrderStatus.Pending]: "⏳ Pendiente",
-  [OrderStatus.WaitingTakerConfirmation]: "⏳ Esperando confirmación",
-  [OrderStatus.WaitingMakerConfirmation]: "⏳ Esperando confirmación",
-  [OrderStatus.WaitingEscrow]: "📥 Esperando depósito",
-  [OrderStatus.Unconfirmed]: "🔄 Confirmando en la red",
-  [OrderStatus.Active]: "🟢 Activa",
-  [OrderStatus.CancelRequested]: "⚠️ Cancelación solicitada",
-  [OrderStatus.FiatSent]: "💸 Fiat enviado",
-  [OrderStatus.Releasable]: "🔓 Lista para liberar",
-  [OrderStatus.Refundable]: "↩️ Lista para reembolso",
-  [OrderStatus.Dispute]: "⚖️ En disputa",
-  [OrderStatus.Completed]: "✅ Completada",
-  [OrderStatus.Refunded]: "↩️ Reembolsada",
-  [OrderStatus.Cancelled]: "❌ Cancelada",
-};
+export const TERMINAL_LOAN_STATUSES = [
+  LoanStatus.Releasable,
+  LoanStatus.Refundable,
+  LoanStatus.Liquidatable,
+  LoanStatus.Completed,
+  LoanStatus.Liquidated,
+  LoanStatus.Refunded,
+  LoanStatus.Cancelled,
+  LoanStatus.Dispute,
+];
 
-export const OrderStatusLabelsEN: Record<string, string> = {
-  [OrderStatus.Pending]: "⏳ Pending",
-  [OrderStatus.WaitingTakerConfirmation]: "⏳ Waiting for confirmation",
-  [OrderStatus.WaitingMakerConfirmation]: "⏳ Waiting for confirmation",
-  [OrderStatus.WaitingEscrow]: "📥 Waiting for deposit",
-  [OrderStatus.Unconfirmed]: "🔄 Confirming on network",
-  [OrderStatus.Active]: "🟢 Active",
-  [OrderStatus.CancelRequested]: "⚠️ Cancellation requested",
-  [OrderStatus.FiatSent]: "💸 Fiat sent",
-  [OrderStatus.Releasable]: "🔓 Ready to release",
-  [OrderStatus.Refundable]: "↩️ Ready to refund",
-  [OrderStatus.Dispute]: "⚖️ In dispute",
-  [OrderStatus.Completed]: "✅ Completed",
-  [OrderStatus.Refunded]: "↩️ Refunded",
-  [OrderStatus.Cancelled]: "❌ Cancelled",
+export type TOrderStatus = typeof OrderStatus[keyof typeof OrderStatus];
+export type TLoanStatus = typeof LoanStatus[keyof typeof LoanStatus];
+export type ContractStatus = TOrderStatus | TLoanStatus;
+
+export const isTerminalStatus = (status: ContractStatus): boolean => {
+  return [...TERMINAL_ORDER_STATUSES, ...TERMINAL_LOAN_STATUSES].includes(status as any);
 };
 
 const FiatEmojis: Record<string, string> = {

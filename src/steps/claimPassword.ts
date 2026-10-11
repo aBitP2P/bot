@@ -1,46 +1,65 @@
-// ctx.session.step === "CLAIM_PASSWORD"
-import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
-import type { CommandContext } from "../types.js";
-import {
-  broadcastReleaseTx,
-  broadcastRefundTx,
-} from "../core/bitcoin/index.js";
-import { decryptData } from "../utils/crypto.js";
-import { getUser } from "../db/users.js";
-import { getUserDict } from "../locales/index.js";
-import { OrderStatus } from "../shared/constants.js";
-import { getParties } from "../utils/parties.js";
+import { getContract, tryTransitionContract } from "../db/contracts.js";
+import { OrderStatus, LoanStatus } from "../shared/constants.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
+import type { CommandContext, LoanRecord, OrderRecord } from "../types.js";
+import { decryptData } from "../utils/crypto.js";
+import {
+  processContractPayout,
+  type PayoutAction,
+} from "../core/bitcoin/transactions.js";
 
 export async function claimPasswordStep(ctx: CommandContext) {
   const text = ctx.message.text;
   const password = text;
-  const orderId = ctx.session.claimOrderId;
+  const contractId = ctx.session.claimOrderId;
   const userId = ctx.from.id;
 
   ctx.session.step = "IDLE";
   ctx.session.claimOrderId = undefined;
   await safeDeleteMsg(ctx);
-  const order = await getOrder(orderId!);
-  if (!order) return ctx.reply(ctx.dict.orderNotFound);
+
+  const contract = await getContract(contractId!);
+  if (!contract) return ctx.reply(ctx.dict.orderNotFound);
+
+  const isReleasable =
+    contract.data.status === OrderStatus.Releasable ||
+    contract.data.status === LoanStatus.Releasable;
+  const isRefundable =
+    contract.data.status === OrderStatus.Refundable ||
+    contract.data.status === LoanStatus.Refundable;
+
+  const isFirstLiquidation =
+    contract.isLoan && contract.data.status === LoanStatus.Liquidatable;
+  const isSecondLiquidation =
+    contract.isLoan && contract.data.status === LoanStatus.PartiallyLiquidated;
+  const isLiquidation = isFirstLiquidation || isSecondLiquidation;
+
+  if (!isReleasable && !isRefundable && !isLiquidation) {
+    return ctx.reply(ctx.dict.invalidOrderStatus);
+  }
+
+  const allowedUserForRefund = contract.isLoan
+    ? contract.buyerOrBorrowerId
+    : contract.sellerOrLenderId;
+  const allowedUserForRelease = contract.buyerOrBorrowerId;
+
+  if (isRefundable && userId !== allowedUserForRefund)
+    return ctx.reply(ctx.dict.onlySeller); // TODO: cambiar a onlyBorrower
+  if (isReleasable && userId !== allowedUserForRelease)
+    return ctx.reply(ctx.dict.onlyBuyer);
 
   if (
-    order.status !== OrderStatus.Releasable &&
-    order.status !== OrderStatus.Refundable
+    isLiquidation &&
+    userId !== contract.sellerOrLenderId &&
+    userId !== contract.buyerOrBorrowerId
   )
-    return ctx.reply(ctx.dict.invalidOrderStatus);
-
-  const isRefund = order.status === OrderStatus.Refundable;
-  const { sellerId, buyerId } = getParties(order)
-
-  if (isRefund && userId !== sellerId) return ctx.reply(ctx.dict.onlySeller);
-  if (!isRefund && userId !== buyerId) return ctx.reply(ctx.dict.onlyBuyer);
+    return ctx.reply(ctx.dict.unauthorizedAccess);
 
   let signerWif: string;
   try {
     signerWif = decryptData(ctx.user.encryptedWif!, password);
   } catch (error) {
-    return ctx.reply(ctx.dict.invalidPassword(`/claim ${orderId}`), {
+    return ctx.reply(ctx.dict.invalidPassword(`/claim ${contractId}`), {
       parse_mode: "Markdown",
     });
   }
@@ -50,48 +69,80 @@ export async function claimPasswordStep(ctx: CommandContext) {
   });
 
   try {
-    const targetStatus = isRefund ? OrderStatus.Refunded : OrderStatus.Completed;
-    const currentValidStatus = isRefund ? OrderStatus.Refundable : OrderStatus.Releasable;
-    let txid = "";
-    try {
-      txid = isRefund
-      ? await broadcastRefundTx(order, signerWif, ctx.user.customFee)
-      : await broadcastReleaseTx(order, signerWif, ctx.user.customFee);
-    } catch (error: any) {
-      throw error;
+    let targetStatus: any;
+    if (isRefundable) {
+      targetStatus = contract.isLoan
+        ? LoanStatus.Refunded
+        : OrderStatus.Refunded;
+    } else if (isFirstLiquidation) {
+      targetStatus = LoanStatus.PartiallyLiquidated; 
+    } else if (isSecondLiquidation) {
+      targetStatus = LoanStatus.Liquidated; 
+    } else {
+      targetStatus = contract.isLoan
+        ? LoanStatus.Completed
+        : OrderStatus.Completed;
     }
 
-    // si por alguna razón el status ya no fuera RELEASABLE/REFUNDABLE
-    // (p. ej. dos invocaciones casi simultáneas de /claim), al menos no se
-    // sobrescribe silenciosamente un estado que otra ejecución ya haya cambiado.
-    const didTransition = await tryTransitionOrderStatus(
-      orderId!,
-      [currentValidStatus],
+    const currentValidStatus = contract.data.status;
+
+    let actionType: PayoutAction;
+    if (isRefundable) actionType = "REFUND";
+    else if (isLiquidation) actionType = "LIQUIDATION";
+    else actionType = "RELEASE";
+
+    let claimAddress: string | null = null;
+    if (contract.isLoan) {
+      claimAddress =
+        userId === contract.buyerOrBorrowerId
+          ? (contract.data as LoanRecord).borrowerAddress!
+          : (contract.data as LoanRecord).lenderAddress!;
+    } else {
+      claimAddress =
+        userId === contract.buyerOrBorrowerId
+          ? (contract.data as OrderRecord).buyerAddress
+          : (contract.data as OrderRecord).refundAddress;
+    }
+
+    let txid = await processContractPayout(
+      contract,
+      signerWif,
+      actionType,
+      ctx.user.customFee,
+      userId,
+      claimAddress ?? undefined,
+    );
+
+    // Si es liquidación, el estado previo podría ser Liquidatable (1er reclamo) o PartiallyLiquidated (2do reclamo)
+    const validFromStatuses = isFirstLiquidation
+      ? [LoanStatus.Liquidatable]
+      : isSecondLiquidation
+        ? [LoanStatus.PartiallyLiquidated]
+        : [currentValidStatus];
+
+    const didTransition = await tryTransitionContract(
+      contract,
+      validFromStatuses as any,
       targetStatus,
       { payoutTxid: txid },
     );
 
     if (!didTransition) {
       console.error(
-        `Inconsistencia: TX ${txid} transmitida pero estado en BD no actualizado para orden ${order.id}`,
+        `Inconsistencia: TX ${txid} transmitida pero estado en BD no actualizado para contrato ${contract.data.id}`,
       );
     }
 
     await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id);
 
-    await ctx.reply(
-      isRefund ? ctx.dict.refundSuccess(txid) : ctx.dict.claimSuccess(txid),
-      { parse_mode: "Markdown" },
-    );
-
-    if (isRefund && buyerId) {
-      const buyer = await getUser(buyerId);
-      const buyerDict = getUserDict(buyer?.language);
-      await ctx.telegram.sendMessage(
-        buyerId,
-        buyerDict.refundCompletedNotification(order.id),
-        { parse_mode: "Markdown" },
-      );
+    if (isLiquidation) {
+      await ctx.reply(ctx.dict.liquidationSuccess(txid), {
+        parse_mode: "Markdown",
+      });
+    } else if (isRefundable) {
+      await ctx.reply(ctx.dict.refundSuccess(txid), { parse_mode: "Markdown" });
+    } else {
+      await ctx.reply(ctx.dict.claimSuccess(txid), { parse_mode: "Markdown" });
     }
   } catch (error: any) {
     await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id);

@@ -6,23 +6,27 @@ import {
   getNextDerivationIndex,
   getBotFeeAddress,
 } from "./fees.js";
-import type { OrderRecord } from "../../types.js";
+import type { LoanRecord, OrderRecord } from "../../types.js";
 import { getBotFeePercent } from "../../config/fees.js";
+import type { UnifiedContract } from "../../db/contracts.js";
+import { LoanStatus } from "../../shared/constants.js";
 
 export const DUST_LIMIT = 546;
 
-async function buildBasePsbt(order: OrderRecord, signerWif: string) {
+async function buildBasePsbt(contract: UnifiedContract, signerWif: string) {
   const signerKeypair = ECPair.fromWIF(signerWif, network);
-  const escrowBotKeypair = deriveOrderBotKeypair(order.id);
+  const escrowBotKeypair = deriveOrderBotKeypair(contract.data.id);
 
-  const utxosRes = await fetchMempool(`address/${order.escrowAddress}/utxo`);
+  const utxosRes = await fetchMempool(
+    `address/${contract.data.escrowAddress}/utxo`,
+  );
   const utxos = await utxosRes.json();
   if (!utxos || utxos.length === 0)
     throw new Error("No hay fondos en el Escrow.");
 
   const psbt = new bitcoin.Psbt({ network });
   const witnessScript = Uint8Array.from(
-    Buffer.from(order.witnessScript!, "hex"),
+    Buffer.from(contract.data.witnessScript!, "hex"),
   );
   const p2wsh = bitcoin.payments.p2wsh({
     redeem: { output: witnessScript, network },
@@ -48,20 +52,25 @@ async function buildBasePsbt(order: OrderRecord, signerWif: string) {
     utxosCount: utxos.length,
   };
 }
-
+type FundingData = {
+  totalFundedSats: number;
+  confirmed: boolean;
+  utxoCount: number;
+};
 export async function checkEscrowFunding(
   address: string,
   currentHeight?: number,
   requiredConf: number = 2,
-): Promise<{ totalFundedSats: number, confirmed: boolean, utxoCount: number } | null> {
+): Promise<FundingData | null> {
   try {
     const res = await fetchMempool(`address/${address}/utxo`, {
       cache: "no-store",
     });
     if (!res.ok) return null;
     const utxos = await res.json();
-    
-    if (utxos.length === 0) return { totalFundedSats: 0, confirmed: false, utxoCount: 0 };
+
+    if (utxos.length === 0)
+      return { totalFundedSats: 0, confirmed: false, utxoCount: 0 };
 
     let height = currentHeight;
     if (height === undefined) {
@@ -89,78 +98,139 @@ export async function checkEscrowFunding(
   }
 }
 
-export async function broadcastReleaseTx(
-  order: OrderRecord,
-  buyerWif: string,
+export type PayoutAction = "RELEASE" | "REFUND" | "LIQUIDATION";
+
+export async function processContractPayout(
+  contract: UnifiedContract,
+  signerWif: string,
+  action: PayoutAction,
   feeRate?: number | null,
+  claimerId?: string | number, 
+  claimAddress?: string        
 ): Promise<string> {
-  const {
-    escrowBotKeypair,
-    psbt,
-    signerKeypair,
-    totalInput,
-    utxosCount
-  } = await buildBasePsbt(order, buyerWif);
+  const { escrowBotKeypair, psbt, signerKeypair, totalInput, utxosCount } =
+    await buildBasePsbt(contract, signerWif);
 
-  const baseSats = order.amountSats;
-  const botFeePercent = getBotFeePercent(baseSats);
-  const buyerFee = Math.floor((baseSats * (botFeePercent / 100)) / 2);
+  if (action === "LIQUIDATION") {
+    if (!contract.isLoan) throw new Error("La liquidación solo aplica a préstamos.");
+    if (!claimerId || !claimAddress) throw new Error("Faltan datos del reclamante y su dirección.");
 
-  const botOutputEstimate = totalInput - baseSats + buyerFee;
-  const outputCount = botOutputEstimate >= DUST_LIMIT ? 2 : 1;
+    const escrow = contract.data.escrowAddress!;
+    const baseCol = contract.amountSatsOrCollateral;
+    const isLender = claimerId === contract.sellerOrLenderId;
 
-  const { satsAmount: minerFee } = await getLiveMinerFee({
-    escrowAddress: null,
-    outputCount: outputCount,
-    customUtxosCount: utxosCount,
-    customFeeRate: feeRate ?? null,
-  });
+    const isFirstClaim = contract.data.status === LoanStatus.Liquidatable;
 
-  const buyerOutput = baseSats - buyerFee - minerFee;
-  if (buyerOutput < DUST_LIMIT)
-    throw new Error(
-      `Fondos insuficientes tras comisiones (Neto: ${buyerOutput} sats). Por favor, espere a que baje la congestión de la red.`,
-    );
+    let destinations: { address: string; amount: number; isMain: boolean }[] = [];
+    let botFee = 0;
 
-  const botOutput = totalInput - buyerOutput - minerFee;
+    if (isFirstClaim) {
+      // 90% lender, 5% bot, 5% borrower (sobrante)
+      const lenderShare = Math.floor(baseCol * 0.90);
+      const botShare = Math.floor(baseCol * 0.05);
+      const borrowerShare = totalInput - lenderShare - botShare;
 
-  psbt.addOutput({ address: order.buyerAddress!, value: BigInt(buyerOutput) });
-  if (botOutput >= DUST_LIMIT) {
-    psbt.addOutput({
-      address: getBotFeeAddress(await getNextDerivationIndex()),
-      value: BigInt(botOutput),
+      botFee = botShare;
+
+      if (isLender) {
+        // Prestamista reclama primero. El 5% vuelve al escrow.
+        destinations.push({ address: claimAddress, amount: lenderShare, isMain: true });
+        destinations.push({ address: escrow, amount: borrowerShare, isMain: false });
+      } else {
+        // Prestatario reclama primero. El 90% vuelve al escrow.
+        destinations.push({ address: claimAddress, amount: borrowerShare, isMain: true });
+        destinations.push({ address: escrow, amount: lenderShare, isMain: false });
+      }
+    } else {
+      // Segundo reclamo, se lleva todo el remanente (100% de lo que quede)
+      destinations.push({ address: claimAddress, amount: totalInput, isMain: true });
+    }
+
+    const { satsAmount: minerFee } = await getLiveMinerFee({
+      escrowAddress: null,
+      outputCount: destinations.length + (botFee >= DUST_LIMIT ? 1 : 0),
+      customUtxosCount: utxosCount,
+      customFeeRate: feeRate ?? null,
     });
+
+    // Descontar la minería solo de la parte de quien está haciendo el reclamo
+    const mainDest = destinations.find(d => d.isMain)!;
+    mainDest.amount -= minerFee;
+
+    if (mainDest.amount < DUST_LIMIT) {
+      throw new Error(`Fondos insuficientes para cubrir la red (${minerFee} sats).`);
+    }
+
+    destinations.forEach(d => {
+      if (d.amount >= DUST_LIMIT) {
+        psbt.addOutput({ address: d.address, value: BigInt(d.amount) });
+      }
+    });
+
+    if (botFee >= DUST_LIMIT) {
+      psbt.addOutput({
+        address: getBotFeeAddress(await getNextDerivationIndex()),
+        value: BigInt(botFee),
+      });
+    }
+
+    psbt.signAllInputs(signerKeypair);
+    psbt.signAllInputs(escrowBotKeypair);
+    psbt.finalizeAllInputs();
+    return executeBroadcast(psbt.extractTransaction().toHex());
   }
 
-  psbt.signAllInputs(signerKeypair);
-  psbt.signAllInputs(escrowBotKeypair);
-  psbt.finalizeAllInputs();
+  // Lógica estándar de Liberación y Reembolso
+  const isRelease = action === "RELEASE";
+  if (!isRelease && action !== "REFUND") throw new Error("Acción de pago no válida.");
 
-  return executeBroadcast(psbt.extractTransaction().toHex());
-}
+  // Usamos claimAddress si se pasó, si no intentamos sacarlo del contrato
+  const destAddress = claimAddress || (isRelease 
+    ? (contract.isLoan ? (contract.data as LoanRecord).borrowerAddress : (contract.data as OrderRecord).buyerAddress)
+    : (contract.isLoan ? (contract.data as LoanRecord).borrowerAddress : (contract.data as OrderRecord).refundAddress)
+  );
 
-export async function broadcastRefundTx(
-  order: OrderRecord,
-  sellerWif: string,
-  feeRate?: number | null,
-): Promise<string> {
-  const { psbt, totalInput, signerKeypair, escrowBotKeypair, utxosCount } =
-    await buildBasePsbt(order, sellerWif);
+  if (!destAddress) throw new Error(`Falta la dirección de destino para la acción ${action}.`);
+
+  let feeSats = 0;
+  const applyBotFee = isRelease; // El bot solo cobra en RELEASE
+  const baseSats = contract.amountSatsOrCollateral;
+
+  if (applyBotFee) {
+    const calcBase = contract.isLoan ? totalInput : baseSats;
+    feeSats = Math.floor((calcBase * (getBotFeePercent(calcBase) / 100)) / (contract.isLoan ? 1 : 2));
+  }
+
+  const botOutputEstimate = applyBotFee ? (contract.isLoan ? feeSats : totalInput - baseSats + feeSats) : 0;
+  const outputCount = (botOutputEstimate >= DUST_LIMIT && applyBotFee) ? 2 : 1;
 
   const { satsAmount: minerFee } = await getLiveMinerFee({
     escrowAddress: null,
-    outputCount: 1,
+    outputCount,
     customUtxosCount: utxosCount,
     customFeeRate: feeRate ?? null,
   });
-  const refundOutput = totalInput - minerFee;
 
-  if (refundOutput < DUST_LIMIT)
-    throw new Error(
-      "La comisión minera supera el monto disponible en el Escrow.",
-    );
+  const payoutOutput = applyBotFee 
+    ? (contract.isLoan ? totalInput - feeSats - minerFee : baseSats - feeSats - minerFee) 
+    : totalInput - minerFee;
 
-  psbt.addOutput({ address: order.refundAddress!, value: BigInt(refundOutput) });
+  if (payoutOutput < DUST_LIMIT) {
+    throw new Error(`Fondos insuficientes tras comisiones (Neto: ${payoutOutput} sats).`);
+  }
+
+  psbt.addOutput({ address: destAddress, value: BigInt(payoutOutput) });
+
+  if (applyBotFee) {
+    const botOutput = totalInput - payoutOutput - minerFee;
+    if (botOutput >= DUST_LIMIT) {
+      psbt.addOutput({
+        address: getBotFeeAddress(await getNextDerivationIndex()),
+        value: BigInt(botOutput),
+      });
+    }
+  }
+
   psbt.signAllInputs(signerKeypair);
   psbt.signAllInputs(escrowBotKeypair);
   psbt.finalizeAllInputs();
@@ -175,4 +245,64 @@ async function executeBroadcast(txHex: string): Promise<string> {
   });
   if (!res.ok) throw new Error(`Broadcast falló: ${await res.text()}`);
   return await res.text();
+}
+
+export type FundingHealthAction =
+  | { type: "CANCEL"; reason: "TRANSACTION_DISAPPEARED" }
+  | { type: "REFUND"; reason: "TAMPERING_DETECTED" | "MAX_UTXOS_REACHED" }
+  | { type: "NOTIFY_PARTIAL"; remainingSats: number }
+  | { type: "MARK_UNCONFIRMED" }
+  | { type: "PROCEED"; actualSats: number }
+  | { type: "IGNORE" };
+
+interface FundingHealthParams {
+  fundingInfo: {
+    totalFundedSats: number;
+    confirmed: boolean;
+    utxoCount: number;
+  };
+  expectedSats: number;
+  isUnconfirmedState: boolean;
+  isWaitingState: boolean;
+  hasNotifiedPartial: boolean;
+}
+
+export function evaluateFundingHealth({
+  fundingInfo,
+  expectedSats,
+  isUnconfirmedState,
+  isWaitingState,
+  hasNotifiedPartial,
+}: FundingHealthParams): FundingHealthAction {
+  if (fundingInfo.totalFundedSats < expectedSats) {
+    if (isUnconfirmedState) {
+      if (fundingInfo.totalFundedSats === 0) {
+        return { type: "CANCEL", reason: "TRANSACTION_DISAPPEARED" };
+      }
+      return { type: "REFUND", reason: "TAMPERING_DETECTED" };
+    }
+
+    if (fundingInfo.utxoCount >= 2) {
+      return { type: "REFUND", reason: "MAX_UTXOS_REACHED" };
+    }
+
+    if (fundingInfo.utxoCount === 1 && !hasNotifiedPartial) {
+      return {
+        type: "NOTIFY_PARTIAL",
+        remainingSats: expectedSats - fundingInfo.totalFundedSats,
+      };
+    }
+
+    return { type: "IGNORE" };
+  }
+
+  if (isWaitingState && !fundingInfo.confirmed) {
+    return { type: "MARK_UNCONFIRMED" };
+  }
+
+  if (fundingInfo.confirmed) {
+    return { type: "PROCEED", actualSats: fundingInfo.totalFundedSats };
+  }
+
+  return { type: "IGNORE" };
 }

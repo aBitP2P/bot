@@ -1,5 +1,5 @@
 import type { Telegraf } from "telegraf";
-import type { BotContext } from "../types.js";
+import type { BotContext, LoanRecord } from "../types.js";
 import { message } from "telegraf/filters";
 import { setPassStep } from "../steps/setPass.js";
 import { claimPasswordStep } from "../steps/claimPassword.js";
@@ -22,6 +22,8 @@ import {
   askLoanTakerFinalConfirmation,
   proceedAfterLoanTakerAmount,
 } from "../handlers/loanHandler.js";
+import { getAccruedInterest, getContract } from "../db/contracts.js";
+import { handleRepaymentRequest } from "../commands/repaid.js";
 
 export function setupMessages(bot: Telegraf<BotContext>) {
   bot.on(message("text"), async (ctx, next) => {
@@ -36,7 +38,7 @@ export function setupMessages(bot: Telegraf<BotContext>) {
       return;
     }
 
-    if (ctx.session.step === "CLAIM_REFUND_ADDRESS") {
+    if (ctx.session.step === "AWAITING_CLAIM_ADDRESS") {
       await claimRefundAddressStep(ctx);
       return;
     }
@@ -189,16 +191,33 @@ export function setupMessages(bot: Telegraf<BotContext>) {
 
       await db
         .update(loans)
-        .set({ durationMonths: inputDuration.toString() })
+        .set({ durationMonthsLocked: inputDuration })
         .where(eq(loans.id, loan.id));
       ctx.session.awaitingDurationForLoan = undefined;
 
       return askLoanTakerFinalConfirmation(ctx, {
         ...loan,
-        durationMonths: inputDuration.toString(),
+        durationMonthsLocked: inputDuration,
       });
     }
 
+    const loanToSetRepayAmount = ctx.session.awaitingRepaidAmountForLoan;
+    if (loanToSetRepayAmount) {
+      const contract = await getContract<LoanRecord>(loanToSetRepayAmount);
+      if (!contract || !contract.isLoan || contract.buyerOrBorrowerId !== ctx.from.id) {
+        ctx.session.awaitingRepaidAmountForLoan = undefined;
+        return next();
+      }
+      let interest = getAccruedInterest(contract.data);
+      const maxRepay = contract.data.fiatAmountLocked! + interest - contract.data.amountRepaid!;
+      const inputAmount = parseFloat(text.replaceAll(",", "."));
+      if (isNaN(inputAmount) || inputAmount <= 0 || inputAmount > maxRepay) {
+        return ctx.reply(ctx.dict.invalidAmountRange(1, contract.data.fiatAmountLocked! + interest - contract.data.amountRepaid!), { parse_mode: "Markdown" });
+      }
+
+      ctx.session.awaitingRepaidAmountForLoan = undefined;
+      return handleRepaymentRequest(ctx, contract, inputAmount);
+    }
     return next();
   });
 }

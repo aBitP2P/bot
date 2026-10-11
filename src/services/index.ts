@@ -1,5 +1,2 @@
-export {
-  startEscrowMonitor,
-  startOrderTimeoutsMonitor,
-} from "./monitors/ordersMonitor.js";
-export { startLoanEscrowMonitor } from "./monitors/loansMonitor.js";
+export { startEscrowMonitor } from "./monitors/escrowMonitor.js";
+export { startTimeoutsMonitor } from "./monitors/timeoutsMonitor.js";

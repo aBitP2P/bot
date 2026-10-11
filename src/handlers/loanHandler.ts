@@ -18,9 +18,10 @@ import {
   buildTakerConfirmKeyboard,
 } from "../shared/keyboards.js";
 import { getRateInfoFor } from "../utils/price.js";
-import { safeDeleteMsg } from "../utils/telegram.js";
+import { safeDeleteMsg, safeRemoveMarkup } from "../utils/telegram.js";
 import { initializeLoanEscrow } from "./escrowHandler.js";
 import type { LoanType } from "../wizards/types.js";
+import { getAccruedInterest, getContract, tryTransitionContract } from "../db/contracts.js";
 
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
@@ -37,6 +38,7 @@ export async function republishLoanSilently(
       borrowerAddress: null,
       lenderAddress: null,
       fiatAmountLocked: null,
+      durationMonthsLocked: null,
       cancelRequestedBy: null,
       createdAt: Date.now(),
     },
@@ -103,6 +105,7 @@ export async function handleLoanCancelledRepublish(
       borrowerAddress: null,
       lenderAddress: null,
       fiatAmountLocked: null,
+      durationMonthsLocked: null,
       cancelRequestedBy: null,
       createdAt: Date.now(),
     },
@@ -293,15 +296,14 @@ export async function askLoanTakerFinalConfirmation(
   const role = isTakerLender ? "LENDER" : "BORROWER";
 
   const principal = loan.fiatAmountLocked!;
-  const duration = parseInt(loan.durationMonths, 10);
+  const interest = getAccruedInterest(loan);
 
-  const interest = principal * (loan.apr / 100) * (duration / 12);
-  const totalReturn = (principal + interest).toFixed(2);
+  const totalDebt = principal + interest;
 
   let estimatedCollateral = "0";
 
   try {
-    const requiredFiatCollateral = principal / (loan.ltv / 100);
+    const requiredFiatCollateral = totalDebt / (loan.ltv / 100);
     const rateInfo = await getRateInfoFor(
       requiredFiatCollateral,
       loan.fiatCode,
@@ -320,10 +322,10 @@ export async function askLoanTakerFinalConfirmation(
     amount: principal.toString(),
     apr: loan.apr,
     ltv: loan.ltv,
-    duration: loan.durationMonths,
+    duration: loan.durationMonthsLocked,
     method: escapeMarkdown(loan.paymentMethod),
     id: loan.id,
-    totalReturn,
+    totalReturn: totalDebt.toFixed(2),
     estimatedCollateral,
   });
 
@@ -355,7 +357,9 @@ export async function proceedToLoanMakerConfirmation(
   await ctx.reply(dict.waitLoanMaker, { parse_mode: "Markdown" });
 
   const principal = loan.fiatAmountLocked!;
-  const requiredFiatCollateral = principal / (loan.ltv / 100);
+  const interest = getAccruedInterest(loan);
+  const totalDebt = principal + interest;
+  const requiredFiatCollateral = totalDebt / (loan.ltv / 100);
 
   let baseSats = 0;
   try {
@@ -386,10 +390,6 @@ export async function proceedToLoanMakerConfirmation(
   const isMakerLender = loan.type === "LEND";
   const role = isMakerLender ? "LENDER" : "BORROWER";
 
-  const duration = parseInt(loan.durationMonths, 10);
-  const interest = principal * (loan.apr / 100) * (duration / 12);
-  const totalReturn = (principal + interest).toFixed(2);
-
   const collateralBtc = (baseSats / 100_000_000).toFixed(8);
 
   await ctx.telegram.sendMessage(
@@ -400,9 +400,9 @@ export async function proceedToLoanMakerConfirmation(
       amount: principal.toString(),
       apr: loan.apr,
       ltv: loan.ltv,
-      duration: loan.durationMonths,
+      duration: loan.durationMonthsLocked,
       method: escapeMarkdown(loan.paymentMethod),
-      totalReturn,
+      totalReturn: totalDebt.toFixed(2),
       collateralSats: collateralBtc,
       trades: taker?.tradesCount || 0,
       days: daysUsing,
@@ -444,5 +444,38 @@ export async function handleLoanMakerConfirm(
 
   if (didTransition) {
     await initializeLoanEscrow(ctx, loanId);
+  }
+}
+
+export async function handleConfirmReceipt(ctx: BotContext, loanId: string) {
+  const contract = await getContract<LoanRecord>(loanId);
+  if (!contract || !contract.isLoan) {
+    return ctx.answerCbQuery(ctx.dict.orderNotFound, { show_alert: true });
+  }
+
+  const didTransition = await tryTransitionContract(
+    contract,
+    [LoanStatus.DisbursementSent],
+    LoanStatus.Active,
+    { loanStartAt: Date.now() },
+  );
+
+  if (!didTransition) {
+    await safeRemoveMarkup(ctx);
+    return ctx.answerCbQuery(ctx.dict.cancelNotAllowed, { show_alert: true });
+  }
+
+  await ctx.editMessageText(ctx.dict.receiptConfirmedBorrower(loanId), {
+    parse_mode: "Markdown",
+  });
+
+  const lender = await getUser(contract.sellerOrLenderId!);
+  if (lender) {
+    const lenderDict = getUserDict(lender.language);
+    await ctx.telegram.sendMessage(
+      lender.telegramId,
+      lenderDict.receiptConfirmedLender(loanId),
+      { parse_mode: "Markdown" },
+    );
   }
 }

@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { getOrder } from "../db/orders.js";
 import { orderRatings, users } from "../db/schema.js";
 import type { CallbackContext } from "../types.js";
 import crypto from "node:crypto";
+import { getContract } from "../db/contracts.js";
 
 export async function handleRating(
   ctx: CallbackContext,
@@ -17,19 +17,19 @@ export async function handleRating(
     raterId: number;
   },
 ) {
-  const order = await getOrder(orderId);
-  if (!order)
+  const contract = await getContract(orderId);
+  if (!contract)
     return ctx.answerCbQuery(ctx.dict.orderNotFound, { show_alert: true });
 
-  const isCreator = order.creatorId === raterId;
-  const isTaker = order.takerId === raterId;
+  const isBuyerOrBorrower = contract.buyerOrBorrowerId === raterId;
+  const isSellerOrLender = contract.sellerOrLenderId === raterId;
 
-  if (!isCreator && !isTaker)
+  if (!isBuyerOrBorrower && !isSellerOrLender)
     return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, {
       show_alert: true,
     });
 
-  const rateeId = isCreator ? order.takerId : order.creatorId;
+  const rateeId = isBuyerOrBorrower ? contract.sellerOrLenderId : contract.buyerOrBorrowerId;
 
   try {
     await db.transaction(async (tx) => {

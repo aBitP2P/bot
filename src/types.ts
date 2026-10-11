@@ -18,6 +18,7 @@ export interface SessionData {
   awaitingAmountForOrder?: string | undefined;
   awaitingAmountForLoan?: string | undefined;
   awaitingDurationForLoan?: string | undefined;
+  awaitingRepaidAmountForLoan?: string | undefined;
   passwordToConfirm?: string | undefined;
   claimOrderId?: string | undefined;
 }

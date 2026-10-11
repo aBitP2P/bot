@@ -9,7 +9,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 export function buildOrderSelectKeyboard(userOrders: any[], prefix: string) {
   const buttons = userOrders.map((o) =>
     Markup.button.callback(
-      `${o.id.slice(0, 2)}..${o.id.slice(-2)} - ${o.type} - ${o.fiatAmountLocked ? o.fiatAmountLocked +  " - " : ""}${o.fiatCode}`,
+      `${o.id.slice(0, 2)}..${o.id.slice(-2)} - ${o.type} - ${o.fiatAmountLocked ? o.fiatAmountLocked + " - " : ""}${o.fiatCode}`,
       `${prefix}_${o.id}`,
     ),
   );
@@ -55,16 +55,17 @@ export function buildMakerConfirmKeyboard(
 }
 
 export function buildSettleDisputeKeyboard(
-  btnBuyer: string,
-  btnSeller: string,
-  btnRefund: string,
-  orderId: string,
+  contractId: string,
+  btnData: {
+    text: string;
+    prefix: string;
+  }[]
 ) {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback(btnBuyer, `settle_buyer_${orderId}`)],
-    [Markup.button.callback(btnSeller, `settle_seller_${orderId}`)],
-    [Markup.button.callback(btnRefund, `settle_refund_${orderId}`)],
-  ]);
+  return Markup.inlineKeyboard(
+    btnData.map((b) =>
+      Markup.button.callback(b.text, b.prefix + "_" + contractId),
+    ),
+  );
 }
 
 export function buildRatingKeyboard(orderId: string) {
@@ -73,6 +74,6 @@ export function buildRatingKeyboard(orderId: string) {
     [Markup.button.callback("⭐⭐⭐⭐", `rate_4_${orderId}`)],
     [Markup.button.callback("⭐⭐⭐", `rate_3_${orderId}`)],
     [Markup.button.callback("⭐⭐", `rate_2_${orderId}`)],
-    [Markup.button.callback("⭐", `rate_1_${orderId}`)]
-  ])
+    [Markup.button.callback("⭐", `rate_1_${orderId}`)],
+  ]);
 }

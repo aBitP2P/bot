@@ -1,5 +1,5 @@
 import { mysqlTable, varchar, text, int, bigint, double, index, uniqueIndex } from "drizzle-orm/mysql-core";
-import { LoanStatus, OrderStatus } from "../shared/constants.js";
+import { LoanPaymentStatus, LoanStatus, OrderStatus } from "../shared/constants.js";
 
 export const users = mysqlTable("users", {
   telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
@@ -86,7 +86,10 @@ export const loans = mysqlTable("loans", {
 
   ltv: double("ltv").notNull(), 
   apr: double("apr").notNull(), 
-  durationMonths: varchar("duration_months", { length: 64 }).notNull(), 
+  durationMonths: varchar("duration_months", { length: 64 }).notNull(),
+  durationMonthsLocked: int("duration_months_locked"), 
+
+  amountRepaid: double("amount_repaid").notNull().default(0),
 
   borrowerAddress: varchar("borrower_address", { length: 255 }),
   lenderAddress: varchar("lender_address", { length: 255 }),
@@ -111,4 +114,26 @@ export const loans = mysqlTable("loans", {
   index("loan_status_idx").on(table.status),
   index("loan_creator_idx").on(table.creatorId),
   index("loan_taker_idx").on(table.takerId),
+]);
+
+export const loanPayments = mysqlTable("loan_payments", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  loanId: varchar("loan_id", { length: 64 }).notNull(),
+  amount: double("amount").notNull(),
+  
+  status: varchar("status", { length: 32 }).notNull().default(LoanPaymentStatus.Pending), 
+
+  createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull().$defaultFn(() => Date.now())
+}, (table) => [
+  index("loan_payment_loan_idx").on(table.loanId),
+  index("loan_payment_status_idx").on(table.status)
+]);
+
+export const loanNotifications = mysqlTable("loan_notifications", {
+  loanId: varchar("loan_id", { length: 64 }).primaryKey()
+    .references(() => loans.id, { onDelete: "cascade" }),
+  ltvWarningSent: int("ltv_warning_sent").notNull().default(0),
+}, (table) => [
+  index("loan_notif_idx").on(table.loanId),
 ]);

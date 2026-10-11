@@ -4,6 +4,8 @@ import pt from './pt.js';
 
 const dictionaries = {
   es,
+  //en,
+  //pt
 };
 
 export const LocaleData = {

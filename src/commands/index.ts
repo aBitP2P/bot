@@ -10,3 +10,5 @@ export { helpCommand } from "./help.js";
 export { setlangCommand } from "./setlang.js";
 export { feesCommand } from "./fees.js"
 export { setFeeCommand } from "./setfee.js";
+export { repaidCommand } from "./repaid.js";
+export { loanStatusCommand } from "./loanstatus.js"

@@ -1,14 +1,16 @@
-import { and, eq, or } from "drizzle-orm";
-import { db } from "../db/index.js";
-import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
-import { orders } from "../db/schema.js";
 import { getUser } from "../db/users.js";
 import { getUserDict } from "../locales/index.js";
 import type { CallbackContext, CommandContext } from "../types.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
-import { OrderStatus } from "../shared/constants.js";
-import { getParties } from "../utils/parties.js";
+import { LoanStatus, OrderStatus } from "../shared/constants.js";
+import {
+  getContract,
+  getFiatPaymentParties,
+  getUnifiedUserContractsForAction,
+  tryTransitionContract,
+} from "../db/contracts.js";
+import { Markup } from "telegraf";
 
 export async function fiatsentCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -16,62 +18,86 @@ export async function fiatsentCommand(ctx: CommandContext) {
 
   const args = ctx.message.text.split(" ");
   if (args.length < 2) {
-    const activeOrders = await db
-      .select()
-      .from(orders)
-      .where(
-        and(
-          eq(orders.status, OrderStatus.Active),
-          or(
-            and(eq(orders.type, "SELL"), eq(orders.takerId, userId)),
-            and(eq(orders.type, "BUY"), eq(orders.creatorId, userId)),
-          ),
-        ),
-      );
+    const combinedContracts = await getUnifiedUserContractsForAction(
+      userId,
+      "FIATSENT",
+    );
 
-    if (activeOrders.length === 0)
-      await ctx.reply(dict.noActiveOrdersFound, { parse_mode: "Markdown" });
-    else
-      await ctx.reply(dict.selectOrderToMarkAsPaid, {
-        ...buildOrderSelectKeyboard(activeOrders, "fiatsentCommand"),
+    if (combinedContracts.length === 0)
+      return await ctx.reply(dict.noActiveOrdersFound, {
+        parse_mode: "Markdown",
       });
-    return;
+
+    return await ctx.reply(dict.selectOrderToMarkAsPaid, {
+      ...buildOrderSelectKeyboard(combinedContracts, "fiatsentCommand"),
+    });
   }
 
   const orderId = args[1] as string;
   await markAsFiatSent(ctx, orderId);
 }
 
-export async function markAsFiatSent(ctx: CallbackContext | CommandContext, orderId: string) {
-  const order = await getOrder(orderId);
+export async function markAsFiatSent(
+  ctx: CallbackContext | CommandContext,
+  contractId: string,
+) {
   const userId = ctx.from.id;
   const dict = ctx.dict;
 
-  try { if (ctx.callbackQuery) await ctx.deleteMessage(); } catch(e) {}
-  if (!order) return ctx.reply(dict.orderNotFound); 
-  if (order.status !== OrderStatus.Active) return ctx.reply(dict.invalidOrderStatus);
+  try {
+    if (ctx.callbackQuery) await ctx.deleteMessage();
+  } catch (e) {}
 
-  const { buyerId, sellerId } = getParties(order);
+  const contract = await getContract(contractId);
+  if (!contract) return ctx.reply(dict.orderNotFound);
 
-  if (userId !== buyerId) return ctx.reply(dict.onlyBuyer);
+  const isValidOrder =
+    !contract.isLoan && contract.data.status === OrderStatus.Active;
+  const isValidLoan =
+    contract.isLoan && contract.data.status === LoanStatus.WaitingDisbursement;
 
-  const didMark = await tryTransitionOrderStatus(
-    orderId,
-    [OrderStatus.Active],
-    OrderStatus.FiatSent,
-  );
+  if (!isValidOrder && !isValidLoan) return ctx.reply(dict.invalidOrderStatus);
+
+  const { senderId, receiverId } = getFiatPaymentParties(contract);
+
+  if (userId !== senderId) return ctx.reply(dict.onlyBuyer);
+
+  const fromStatuses = contract.isLoan
+    ? [LoanStatus.WaitingDisbursement]
+    : [OrderStatus.Active];
+  const toStatus = contract.isLoan
+    ? LoanStatus.DisbursementSent
+    : OrderStatus.FiatSent;
+
+  const didMark = await tryTransitionContract(contract, fromStatuses, toStatus);
   if (!didMark) return ctx.reply(dict.invalidOrderStatus);
 
-  const seller = await getUser(sellerId!);
-  const dictSeller = getUserDict(seller?.language);
-  const buyerName = ctx.from.username
-    ? escapeMarkdown(ctx.from.username)
-    : "El comprador";
+  const receiver = await getUser(receiverId!);
+  const dictReceiver = getUserDict(receiver?.language);
+  const senderName = escapeMarkdown(ctx.from.username!);
 
-  await ctx.reply(dict.fiatSentToBuyer(order.id), { parse_mode: "Markdown" });
+  const msgSender = contract.isLoan
+    ? dict.loanFiatSentToLender
+    : dict.fiatSentToBuyer;
+  const msgReceiver = contract.isLoan
+    ? dictReceiver.loanFiatSentToBorrower
+    : dictReceiver.fiatSentToSeller;
+
+  await ctx.reply(msgSender(contract.data.id), { parse_mode: "Markdown" });
+  let extra = { parse_mode: "Markdown" };
+  if (contract.isLoan)
+    extra = {
+      ...extra,
+      ...Markup.inlineKeyboard([
+        Markup.button.callback(
+          dictReceiver.btnConfirmReceipt,
+          "confirmReceipt_" + contract.data.id,
+        ),
+      ]),
+    };
   await ctx.telegram.sendMessage(
-    sellerId!,
-    dictSeller.fiatSentToSeller(order.id, buyerName),
-    { parse_mode: "Markdown" },
+    receiverId!,
+    msgReceiver(contract.data.id, senderName),
+    extra as any,
   );
 }

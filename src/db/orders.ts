@@ -1,8 +1,8 @@
 import { and, eq, inArray, ne, notInArray, or, type SQL } from "drizzle-orm";
 import { db } from "./index.js";
-import { orders } from "./schema.js";
+import { loans, orders } from "./schema.js";
 import type { ResultSetHeader } from "mysql2";
-import { OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
+import { OrderStatus, TERMINAL_ORDER_STATUSES } from "../shared/constants.js";
 
 export async function createOrder(orderData: typeof orders.$inferInsert) {
   return await db.insert(orders).values(orderData);
@@ -38,7 +38,7 @@ export async function getOrdersCreatedBy(userId: number) {
     .where(
       and(
         eq(orders.creatorId, userId),
-        notInArray(orders.status, TERMINAL_STATUSES),
+        notInArray(orders.status, TERMINAL_ORDER_STATUSES),
       ),
     );
 }
@@ -72,7 +72,7 @@ export async function tryTransitionOrderStatus(
  * Variante para asignaciones que no dependen del status sino de otra columna
  * (ej. asignar un admin solo si `disputeAdminId` sigue siendo NULL).
  */
-export async function tryConditionalUpdate(
+export async function tryConditionalOrderUpdate(
   orderId: string,
   condition: SQL | undefined,
   fields: Partial<typeof orders.$inferInsert>,
@@ -86,3 +86,19 @@ export async function tryConditionalUpdate(
 
   return result.affectedRows > 0;
 }
+
+export async function tryConditionalLoanUpdate(
+  loanId: string,
+  condition: SQL | undefined,
+  fields: Partial<typeof orders.$inferInsert>,
+): Promise<boolean> {
+  const [result] = (await db
+    .update(loans)
+    .set({ updatedAt: Date.now(), ...fields })
+    .where(and(eq(loans.id, loanId), condition))) as unknown as [
+    ResultSetHeader,
+  ];
+
+  return result.affectedRows > 0;
+}
+

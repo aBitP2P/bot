@@ -1,16 +1,26 @@
-import type { orders } from "../db/schema.js";
-import {
-  Strings,
-  OrderStatusLabelsES,
-  getFiatEmoji,
-} from "../shared/constants.js";
+import { Strings, OrderStatus, getFiatEmoji } from "../shared/constants.js";
 import { mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
 import { MIN_SATS } from "../utils/price.js";
 import type { LoanDraft } from "../wizards/types.js";
-import type { UserRecord } from "../types.js";
+import type { OrderRecord, UserRecord } from "../types.js";
 import { escapeMarkdown } from "../utils/format.js";
 
-type OrderRow = typeof orders.$inferSelect;
+export const OrderStatusMap: Record<string, string> = {
+  [OrderStatus.Pending]: "⏳ Pendiente",
+  [OrderStatus.WaitingTakerConfirmation]: "⏳ Esperando confirmación",
+  [OrderStatus.WaitingMakerConfirmation]: "⏳ Esperando confirmación",
+  [OrderStatus.WaitingEscrow]: "📥 Esperando depósito",
+  [OrderStatus.Unconfirmed]: "🔄 Confirmando en la red",
+  [OrderStatus.Active]: "🟢 Activa",
+  [OrderStatus.CancelRequested]: "⚠️ Cancelación solicitada",
+  [OrderStatus.FiatSent]: "💸 Fiat enviado",
+  [OrderStatus.Releasable]: "🔓 Lista para liberar",
+  [OrderStatus.Refundable]: "↩️ Lista para reembolso",
+  [OrderStatus.Dispute]: "⚖️ En disputa",
+  [OrderStatus.Completed]: "✅ Completada",
+  [OrderStatus.Refunded]: "↩️ Reembolsada",
+  [OrderStatus.Cancelled]: "❌ Cancelada",
+};
 
 export default {
   // ─────────────────────────── General & UI ───────────────────────────
@@ -30,7 +40,7 @@ export default {
     `⚙️ *Cuenta y Sistema*\n` +
     `/setpass — Encripta tu perfil a partir de una contraseña\n` +
     `/setlang — Cambia de idioma\n` +
-    "/fees - Revisa como están las comisiones para tus órdenes \n" +
+    "/fees - Revisa como están las comisiones para tus órdenes\n" +
     "/setfee - Establece la comisión de red que se usará\n" +
     `/exit — Cancelar la acción actual\n\n` +
     `📢 Canal: ${Strings.OrderChannelTag}\n` +
@@ -54,10 +64,10 @@ export default {
   telegramUsernameRequired:
     "❌ **Requiere nombre de usuario**\n\nNecesitas configurar un @username de Telegram para interactuar con este bot. Ve a *Ajustes > Nombre de usuario*, configúralo y vuelve a intentarlo.",
   setYourPersonalPassword:
-    "❌ Primero debes de establecer tu contraseña con /setpass para poder tomar o crear órdenes.",
+    "❌ Primero debes establecer tu contraseña con /setpass para poder tomar o crear órdenes.",
   promptPassword:
     `*⚠️ Se generará una llave privada ligada a tu usuario, la contraseña SERÁ NECESARIA para reclamar las órdenes.*\n` +
-    `*NO SE PUEDE CAMBIAR, asegúrate de escribirla correctamente y anotarla en algún lugar.*\n\n` +
+    `*NO SE PUEDE CAMBIAR, asegúrate de escribirla correctamente y anotarla en un lugar seguro.*\n\n` +
     "🔑 *Por favor, escribe tu contraseña para configurar tu usuario:*",
   confirmPassword: "👉 Para confirmar, vuelve a escribir la contraseña: ",
   passwordsDoNotMatch:
@@ -65,7 +75,7 @@ export default {
   passwordAlreadySet: "❌ Ya tienes una contraseña establecida previamente.",
   passwordSetSuccess:
     `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.\n\n` +
-    "_Ten en cuenta que solo es para uso del bot. Los fondos que compres, se enviarán a cualquier dirección que desees al momento, el bot no custodia en ningún momento los fondos de manera directa._",
+    "_Ten en cuenta que esta contraseña es solo para firmar retiros en el bot. Los fondos que adquieras se enviarán directamente a la dirección externa que proveas; el bot no custodia tus fondos._",
   invalidLanguage: "❌ Idioma inválido.",
   selectLanguage: "👇 Selecciona tu idioma preferido",
   languageUpdateSuccess: "✅ Idioma actualizado correctamente.",
@@ -88,7 +98,7 @@ export default {
   }) =>
     `⚠️ *Monto insuficiente tras aplicar margen*\n\n` +
     `Al aplicar tu margen del ${margin}%, el total a recibir bajó a ${satsAmount.toLocaleString()} sats.\n\n` +
-    `Para cumplir con el mínimo de ${MIN_SATS.toLocaleString()} sats, debes iniciar la orden con al menos *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
+    `Para cumplir con el mínimo de ${MIN_SATS.toLocaleString()} sats, debes iniciar la orden con al menos *$${minFiatRequired.toFixed(2)}${fiatCode}*.\n\n` +
     `🔄 Por favor, inicia la creación de la orden nuevamente.`,
   wizardPreview: (
     type: string,
@@ -99,11 +109,11 @@ export default {
     prompt: string,
   ) =>
     `🛠 *Creando Orden (${type})*\n\n` +
-    "ℹ️ Puedes usar /exit para salir del proceso\n\n" +
-    `💱 Moneda FIAT: \`${fiat}\`\n` +
-    `📊 Monto / Rango: \`${amount}\`\n` +
-    `📈 Margen: \`${margin}\`\n` +
-    `💳 Método de pago: \`${method}\`\n\n` +
+    `▪️ Moneda: \`${fiat}\`\n` +
+    `▪️ Monto/Rango: \`${amount}\`\n` +
+    `▪️ Margen: \`${margin}\`\n` +
+    `▪️ Método: \`${method}\`\n\n` +
+    `_Usa /exit en cualquier momento para cancelar_\n\n` +
     `👉 *${prompt}*`,
   channelOrder: ({
     action,
@@ -133,27 +143,25 @@ export default {
     ratingCount: number;
   }) =>
     `**${action} Bitcoin**\n\n` +
-    `Por ${amountFiat.split("-").join(" - ")} ${fiat} ${getFiatEmoji(fiat)}\n ` +
-    `💳 ${payDirection} ${method}\n` +
-    `🤝 Tiene ${tradesCount} operaciones exitosas\n` +
-    `⏳ Usa el bot hace ${daysUsing} días\n\n` +
+    `Por ${amountFiat.split("-").join(" - ")} ${fiat}${getFiatEmoji(fiat)}\n` +
+    `💳 ${payDirection}${method}\n` +
+    `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n\n` +
+    `👤 **Contraparte:**\n` +
+    `▪️ ${tradesCount} operaciones exitosas\n` +
+    `▪️ Usa el bot hace ${daysUsing} días\n` +
+    `▪️ ${rating.toFixed(1)} ${"⭐".repeat(Math.floor(rating))} (${ratingCount})\n\n` +
     `${hashtag}\n` +
-    `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
-    `${rating.toFixed(1)} ${"⭐".repeat(Math.floor(rating))} (${ratingCount})\n\n` +
     `\`${id}\``,
   orderPublishedSuccess: (orderId: string) =>
-    "✅ *¡Orden publicada exitosamente en el canal!*\n" +
-    "Puedes cancelarlo usando `/cancel " +
-    orderId +
-    "`\n" +
-    "👉 " +
-    Strings.OrderChannelTag,
-  listOrders: (list: OrderRow[]) => {
+    `✅ *¡Orden publicada exitosamente en el canal!*\n` +
+    `Puedes cancelarla usando \`/cancel ${orderId}\`\n` +
+    `👉 ${Strings.OrderChannelTag}`,
+  listOrders: (list: OrderRecord[]) => {
     if (list.length === 0) return "📭 No tienes órdenes registradas.";
 
     const blocks = list.map((o) => {
       const typeLabel = o.type === "SELL" ? "🔴 Venta" : "🟢 Compra";
-      const statusLabel = OrderStatusLabelsES[o.status] || o.status;
+      const statusLabel = OrderStatusMap[o.status] || o.status;
       const marginLabel =
         o.margin === 0
           ? "Precio de mercado"
@@ -166,20 +174,17 @@ export default {
         minute: "2-digit",
       });
 
-      return [
-        `📄 Orden: \`${o.id}\``,
-        `Tipo: \`${typeLabel}\``,
-        `Fiat: \`${o.fiatCode}\``,
-        `Monto: \`${o.fiatAmountLocked ?? o.amountFiat} ${o.fiatCode}\``,
-        `Margen: \`${marginLabel}\``,
-        `Estado: \`${statusLabel}\``,
-        `Creada: \`${createdDate}\``,
-      ].join("\n");
+      return (
+        `📄 *Orden:* \`${o.id}\`\n` +
+        `▪️ Tipo: ${typeLabel}\n` +
+        `▪️ Monto: \`${o.fiatAmountLocked ?? o.amountFiat} ${o.fiatCode}\`\n` +
+        `▪️ Margen: \`${marginLabel}\`\n` +
+        `▪️ Estado: ${statusLabel}\n` +
+        `▪️ Creada: ${createdDate}`
+      );
     });
 
-    return blocks.join(
-      "\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n",
-    );
+    return blocks.join("\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n");
   },
   orderExpiredCancelled: (orderId: string) =>
     `⌛ *Orden expirada*\n\nTu orden \`${orderId}\` ha superado las 24 horas publicada sin ser tomada. Ha sido cancelada automáticamente y retirada del canal.`,
@@ -202,10 +207,10 @@ export default {
     method: string;
     id: string;
   }) =>
-    `*${type}* Bitcoin\n\n` +
-    `💵 Monto: ${amount} ${fiat}\n` +
-    `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
-    `💳 Método: ${method}\n\n` +
+    `*${type} Bitcoin*\n\n` +
+    `▪️ Monto: ${amount}${fiat}\n` +
+    `▪️ Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
+    `▪️ Método: ${method}\n\n` +
     `¿Estás seguro de que deseas continuar?\n\n` +
     `ID: \`${id}\``,
   makerAskConfirm: ({
@@ -230,56 +235,56 @@ export default {
     id: string;
   }) =>
     `Alguien quiere tomar tu orden de *${type}*.\n\n` +
-    `💵 Monto: ${amount} ${fiat}\n` +
-    `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
-    `💳 Método: ${method}\n\n` +
+    `▪️ Monto: ${amount}${fiat}\n` +
+    `▪️ Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
+    `▪️ Método: ${method}\n\n` +
     `👤 **Datos de la contraparte:**\n` +
-    `🤝 Operaciones: ${trades}\n` +
-    `⏳ Antigüedad: ${days} días\n` +
-    `⭐ Reputación: ${rating.toFixed(1)}/5.0\n\n` +
+    `▪️ Operaciones: ${trades}\n` +
+    `▪️ Antigüedad: ${days} días\n` +
+    `▪️ Reputación: ${rating.toFixed(1)}/5.0\n\n` +
     `¿Deseas confirmar e iniciar el intercambio?\n\n` +
     `ID: \`${id}\``,
   promptExactAmount: (range: string, fiat: string) =>
-    `Esta orden permite un rango de **${range} ${fiat}**.\n\n` +
+    `Esta orden permite un rango de **${range}${fiat}**.\n\n` +
     `💬 *Por favor, escribe en el chat el monto exacto* por el que deseas hacer el intercambio (solo números):`,
   askBuyerAddress: (estimatedSats: number) =>
-    "📍 *Por favor, envía tu dirección de Bitcoin on-chain* donde recibirás los fondos.\n_(Asegúrate de que sea correcta, no nos hacemos responsables por errores)_\n\n" +
+    "📍 *Por favor, envía tu dirección de Bitcoin on-chain* donde recibirás los fondos.\n_(Asegúrate de que sea correcta, no nos hacemos responsables por errores de tipeo)_\n\n" +
     "La cantidad estimada a recibir es de: `" +
     estimatedSats / 100_000_000 +
-    "` BTC antes de comisiones de red.",
+    "` BTC (antes de comisiones de red).",
   waitMaker:
     "⏳ Perfecto. Por favor, *espera a que la contraparte confirme* si desea continuar con la orden.",
   waitTaker:
-    "⏳ Dirección guardada. Ahora *espera a que el vendedor deposite* los fondos en el escrow.",
-  acceptedNowWaitingEscrow: `✅ *Orden aceptada.*\n\n⏳ Esperando a que el vendedor envíe los fondos al escrow, puede tomar varios minutos...`,
+    "⏳ Dirección guardada. Ahora *espera a que el vendedor deposite* los fondos en la dirección multifirma.",
+  acceptedNowWaitingEscrow: `✅ *Orden aceptada.*\n\n⏳ Esperando a que el vendedor envíe los fondos a la dirección multifirma, esto puede tomar varios minutos...`,
 
   // ─────────────────────────── Escrow & Network ───────────────────────────
   missingPubkeys:
-    "❌ Error crítico: Faltan llaves públicas para generar el escrow.",
+    "❌ Error crítico: Faltan llaves públicas para generar la dirección multifirma.",
   askSellerEscrow: (sats: number, address: string) =>
-    `⚡ *Fondeo de escrow Requerido*\n\n` +
-    `Por favor, envía \`${sats / 100_000_000}\` BTC a la siguiente dirección on-chain:\n\n` +
+    `⚡ *Fondeo de Bóveda Requerido*\n\n` +
+    `Por favor, envía \`${sats / 100_000_000}\` BTC a la siguiente dirección multifirma on-chain:\n\n` +
     `\`${address}\`\n\n` +
-    `_Una vez se confirme la transacción (2 confirmaciones), los pondremos en contacto. Por favor, asegurate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
+    `_Una vez se confirme la transacción (2 confirmaciones), los pondremos en contacto. Por favor, asegúrate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
   escrowUnconfirmed: (escrowAddress: string) =>
     `⏳ *Transacción detectada en la red.*\n\n` +
     `[Ver en el explorador](${mempoolBaseURL}/address/${escrowAddress}) \n` +
-    `_Esperando 2 confirmaciones para poder proceder seguramente con la orden..._`,
+    `_Esperando 2 confirmaciones para proceder de forma segura con la orden..._`,
   escrowFundingFailed: (
     utxoCount: number,
     totalFundedSats: number,
     expectedSats: number,
     orderId: string,
   ) =>
-    `❌ *Fondeo fallido*\n\nSe han detectado ${utxoCount} depósitos pero el monto sigue siendo inferior al esperado (${totalFundedSats / 100_000_000} BTC recibidos de ${expectedSats / 100_000_000} BTC requeridos). El límite máximo es de 2 transacciones.\n\nLa orden ha sido cancelada. Ejecuta \`/claim ${orderId}\` para solicitar el reembolso de tus fondos.`,
+    `❌ *Fondeo fallido*\n\nSe han detectado ${utxoCount} depósitos pero el monto sigue siendo inferior al esperado (${totalFundedSats / 100_000_000} BTC recibidos de${expectedSats / 100_000_000} BTC requeridos). El límite máximo es de 2 transacciones.\n\nLa orden ha sido cancelada. Ejecuta \`/claim ${orderId}\` para solicitar el reembolso de los fondos parciales enviados.`,
   incompleteFunding: (
     totalFundedSats: number,
     expectedSats: number,
     remainingSats: number,
   ) =>
-    `⚠️ *Depósito incompleto*\n\nHemos detectado la llegada de ${totalFundedSats / 100_000_000} BTC, pero la orden requiere ${expectedSats / 100_000_000} BTC.\n\nFaltan por depositar: \`${remainingSats / 100_000_000}\` BTC.\n\n_Cuentas con 1 intento de envío adicional. Si el segundo depósito no completa la cantidad requerida, la orden se cancelará y pasará a reembolso._`,
+    `⚠️ *Depósito incompleto*\n\nHemos detectado la llegada de ${totalFundedSats / 100_000_000} BTC, pero la orden requiere${expectedSats / 100_000_000} BTC.\n\nFaltan por depositar: \`${remainingSats / 100_000_000}\` BTC.\n\n_Cuentas con 1 intento de envío adicional. Si el segundo depósito no completa la cantidad requerida, la orden se cancelará y pasará a reembolso._`,
   fundingExpired:
-    "⚠️ Tu orden ha expirado por no completar el depósito a tiempo. Usa /claim para reembolsar los fondos parciales enviados.",
+    "⚠️ Tu orden ha expirado por no completar el depósito a tiempo. Usa /claim para reembolsar los fondos parciales enviados a la dirección.",
   sellerDidNotFund: (orderId: string) =>
     `⚠️ *El vendedor no depositó*\n\nEl usuario que tomó tu orden \`${orderId}\` no realizó el depósito en el tiempo establecido. Tu oferta ha sido republicada en el canal.`,
   partialDepositCancelled:
@@ -290,17 +295,17 @@ export default {
   orderCancelledSellerDepositReverted:
     "❌ *Orden cancelada*\n\nEl depósito del vendedor fue revertido o desapareció de la red.",
   tamperingDetected:
-    "❌ *Manipulación detectada*\n\nSe detectó una reversión parcial de los fondos en la red. La orden ha sido cancelada. Ejecuta /claim para recuperar el saldo restante en el escrow.",
+    "❌ *Manipulación detectada*\n\nSe detectó una reversión parcial de los fondos en la red. La orden ha sido cancelada. Ejecuta /claim para recuperar el saldo restante.",
   orderCancelledDepositAltered:
     "❌ *Orden cancelada*\n\nEl depósito fue alterado en la red antes de confirmarse. El acuerdo ha sido abortado por tu seguridad.",
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
-    `✅ *¡Escrow Fondeado y Confirmado!*\n\n` +
-    `Los fondos están asegurados en el contrato inteligente.\n\n` +
+    `✅ *¡Depósito Confirmado!*\n\n` +
+    `Los fondos están asegurados en la dirección multifirma.\n\n` +
     `🗣 **Contacta al vendedor aquí:** ${sellerContact}\n\n` +
     `_Instrucciones: Realiza el pago por el método acordado. Una vez transferido el dinero, ejecuta el comando_ \`/fiatsent ${orderId}\` _para notificar al vendedor._`,
   escrowConfirmedSeller: (buyerContact: string, orderId: string) =>
-    `✅ *¡Escrow Fondeado y Confirmado!*\n\n` +
-    `Tus fondos están asegurados en el contrato inteligente.\n\n` +
+    `✅ *¡Depósito Confirmado!*\n\n` +
+    `Tus fondos están asegurados en la dirección multifirma.\n\n` +
     `🗣 **Contacta al comprador aquí:** ${buyerContact}\n\n` +
     `_Instrucciones: Espera el pago del comprador. Una vez que verifiques que el dinero está en tu cuenta, ejecuta el comando_ \`/release ${orderId}\` _para liberar los fondos._`,
   feesList: (
@@ -321,7 +326,7 @@ export default {
       ? `🎯 *Tu Tarifa Personalizada* ✅ *(activa)*\n   \`${customFee}\` sat/vB\n\n`
       : "") +
     "━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "🤖 *Comisión del Bot*\n" +
+    "🤖 *Comisión del Protocolo*\n" +
     `   \`${botFee}%\`\n` +
     "   └ Se divide 50/50 entre ambas partes\n\n" +
     "💡 " +
@@ -331,7 +336,7 @@ export default {
   customFeeChanged: (newFee: number) =>
     `✅ La comisión de red ha sido establecida a ${newFee} sats/vB`,
   couldNotFetchFees:
-    "❌ No se ha podido conseguir las fees actuales, inténtalo de nuevo más tarde.",
+    "❌ No se han podido conseguir las fees actuales, inténtalo de nuevo más tarde.",
   resetFeeButton: "♻️ Volver por defecto (Económica)",
   feeResetSuccess:
     "✅ Tu tarifa ha vuelto a la configuración económica por defecto.",
@@ -368,14 +373,14 @@ export default {
     `El comprador ha sido notificado para que firme y reclame su Bitcoin. ¡Gracias por usar el servicio!`,
   releaseToBuyer: (orderId: string) =>
     `🎉 *¡El vendedor ha liberado los fondos!*\n\n` +
-    `El escrow está listo para ser reclamado. Ejecuta el siguiente comando para iniciar el retiro a tu billetera:\n\n` +
+    `Los fondos están listos para ser reclamados. Ejecuta el siguiente comando para iniciar el retiro a tu billetera:\n\n` +
     `\`/claim ${orderId}\``,
   rangeOrderPartiallyCompleted: (
     newOrderId: string,
     newAmountFiat: string,
     fiatCode: string,
   ) =>
-    `ℹ️ Tu orden de rango ha sido completada parcialmente. Se ha republicado una nueva orden (\`${newOrderId}\`) por el saldo restante: *${newAmountFiat} ${fiatCode}* en ${Strings.OrderChannelTag}.`,
+    `ℹ️ Tu orden de rango ha sido completada parcialmente. Se ha republicado una nueva orden (\`${newOrderId}\`) por el saldo restante: *${newAmountFiat} ${fiatCode}* en${Strings.OrderChannelTag}.`,
 
   // --------------------------- Rating -----------------------------------
   rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",
@@ -395,9 +400,9 @@ export default {
   ) =>
     `🔐 *Reclamar Fondos*\n\n` +
     `**Desglose de la transacción:**\n` +
-    `├ Dirección: \`${receivingAddress}\`\n` +
-    `├ Comisión minera (est): \`-${minerFee / 100_000_000} BTC\` (${minerFeeRate} sats/vB)\n` +
-    `└ **Recibirás aprox:** \`${finalAmount / 100_000_000} BTC\`\n\n` +
+    `▪️ Dirección: \`${receivingAddress}\`\n` +
+    `▪️ Comisión minera (est): \`-${minerFee / 100_000_000} BTC\` (${minerFeeRate} sats/vB)\n` +
+    `▪️ **Recibirás aprox:** \`${finalAmount / 100_000_000} BTC\`\n\n` +
     `💡 *Nota:* Si no estás de acuerdo con la comisión minera, puedes enviar /exit para cancelar y usar /setfee para establecer tu propia tarifa.\n\n` +
     `Por favor, **escribe tu contraseña** para firmar criptográficamente el retiro hacia tu billetera:`,
   psbtSigningLoading: `⏳ *Co-firmando y transmitiendo a la red...*`,
@@ -407,7 +412,7 @@ export default {
   refundSuccess: (txid: string) =>
     `🎉 *¡Reembolso Exitoso!*\n\nTus fondos van de vuelta a tu billetera.\n🔎 [Ver TX](${mempoolBaseURL}/tx/${txid})`,
   refundCompletedNotification: (orderId: string) =>
-    `ℹ️ *Orden Cancelada*\n\nEl vendedor reclamó el reembolso de la orden \`${orderId}\`. Los fondos del escrow fueron devueltos.`,
+    `ℹ️ *Orden Cancelada*\n\nEl vendedor reclamó el reembolso de la orden \`${orderId}\`. Los fondos fueron devueltos a su dirección original.`,
 
   // ─────────────────────────── Cancellations ───────────────────────────
   selectOrderToCancel:
@@ -417,7 +422,7 @@ export default {
   cancelAlreadyRequested: `⏳ Ya solicitaste la cancelación. Esperando a que tu contraparte acepte y firme.`,
   cancelOnlySeller: `❌ Solo el vendedor puede cancelar la orden en este estado.`,
   cancelAddressWait:
-    "❌ Debes esperar al menos 10 minutos desde que se generó la dirección antes de cancelar, para prevenir colisiones con transacciones en tránsito.",
+    "❌ Debes esperar al menos 10 minutos desde que se generó la dirección antes de cancelar, para prevenir problemas con transacciones en tránsito.",
   counterpartyCanceledDeleted: (orderId: string) =>
     `🚫 Tu contraparte ha cancelado la orden \`${orderId}\`.`,
   matchCancelledRepublished: (orderId: string) =>
@@ -433,7 +438,7 @@ export default {
   orderCancelled: "🚫 La orden ha sido cancelada.",
 
   // ─────────────────────────── Disputes ───────────────────────────
-  disputeNotAllowed: `❌ No puedes abrir una disputa en el estado actual de la orden. Las disputas solo aplican a órdenes con fondos activos en el escrow.`,
+  disputeNotAllowed: `❌ No puedes abrir una disputa en el estado actual de la orden. Las disputas solo aplican a órdenes con fondos activos en la dirección multifirma.`,
   disputeAlreadyOpen: `⚠️ Ya existe una disputa abierta para esta orden.`,
   disputeOpened: (code: string, orderId: string) =>
     `⚖️ *Tu disputa ha sido abierta.*\n\n` +
@@ -467,7 +472,7 @@ export default {
     `⚖️ *NUEVA DISPUTA*\n\n` +
     `Orden: \`${orderId}\`\n` +
     `Tipo: ${type}\n` +
-    `Monto: ${amountFiat} ${fiatCode}\n` +
+    `Monto: ${amountFiat}${fiatCode}\n` +
     `Estado previo: \`${status}\`\n` +
     `Escrow: \`${escrowAddress}\`\n\n` +
     `👤 Comprador: @${buyerUsername}\n` +
@@ -515,11 +520,11 @@ export default {
   settleBuyerWinsNotifyBuyer: (orderId: string) =>
     `⚖️ *Disputa resuelta a tu favor.*\n\nLa orden \`${orderId}\` fue resuelta a favor del comprador. Ya puedes reclamar tus fondos ejecutando:\n\n\`/claim ${orderId}\``,
   settleBuyerWinsNotifySeller: (orderId: string) =>
-    `⚖️ *Disputa resuelta.*\n\nLa orden \`${orderId}\` fue resuelta a favor del comprador. Los fondos del escrow serán liberados hacia su dirección.`,
+    `⚖️ *Disputa resuelta.*\n\nLa orden \`${orderId}\` fue resuelta a favor del comprador. Los fondos serán liberados hacia su dirección.`,
   settleSellerWinsNotifySeller: (orderId: string) =>
     `⚖️ *Disputa resuelta a tu favor.*\n\nLa orden \`${orderId}\` fue resuelta a tu favor. Puedes recuperar tus fondos ejecutando:\n\n\`/claim ${orderId}\``,
   settleSellerWinsNotifyBuyer: (orderId: string) =>
-    `⚖️ *Disputa resuelta.*\n\nLa orden \`${orderId}\` fue resuelta a favor del vendedor. Los fondos del escrow serán devueltos a su dueño original.`,
+    `⚖️ *Disputa resuelta.*\n\nLa orden \`${orderId}\` fue resuelta a favor del vendedor. Los fondos serán devueltos a su dueño original.`,
   settleCancelledNotifyBuyer: (orderId: string) =>
     `↩️ *Disputa resuelta: orden cancelada.*\n\nEl administrador determinó cancelar la orden \`${orderId}\`. Los fondos serán devueltos al vendedor.`,
   settleCancelledNotifySeller: (orderId: string) =>
@@ -529,11 +534,11 @@ export default {
   settleResolutionRefundLabel: "Cancelar / Reembolsar al vendedor",
 
   // ─────────────────────────── Errors & Validations ───────────────────────────
-  noOrdersFound: "❌ No se han encontrado ordenes creadas por ti.",
+  noOrdersFound: "❌ No se han encontrado órdenes creadas por ti.",
   orderNotFound: `❌ Orden no encontrada.`,
   invalidOrderStatus: `❌ No puedes realizar esta acción en la etapa actual de la orden.`,
   waitForBuyerFiatSent: (orderId: string) =>
-    "❌ Debes de notificar al comprador que marque la orden como pagada con `/fiatsent " +
+    "❌ Debes notificar al comprador que marque la orden como pagada con `/fiatsent " +
     orderId +
     "`",
   onlyBuyer: `❌ Solo el comprador puede realizar esta acción.`,
@@ -544,14 +549,14 @@ export default {
   invalidAmountRange: (min: number, max: number) =>
     `❌ El monto es inválido. Debe ser un número entre **${min}** y **${max}**.\nIntenta de nuevo:`,
   fiatValueBelowMinimun: (fiatCode: string, minValue: number) =>
-    `❌ La cantidad para ${fiatCode} debe ser al menos ${minValue}. Intenta de nuevo:`,
+    `❌ La cantidad para ${fiatCode} debe ser al menos${minValue}. Intenta de nuevo:`,
   fiatValueTooBig:
     "❌ El monto es demasiado grande para ser procesado por el sistema.",
   invalidRefundAddress:
     "❌ Esa dirección de Bitcoin no es válida. Por favor, envíala de nuevo:",
   invalidBuyerAddress:
     "❌ Esa dirección de Bitcoin no es válida. Por favor, envía una dirección correcta:",
-  maxOrdersReached: "❌ Haz alcanzado el límite de órdenes creadas por ti.",
+  maxOrdersReached: "❌ Has alcanzado el límite de órdenes activas.",
   invalidFiatCode: "❌ El código fiat no fue reconocido, intenta de nuevo:",
   orderAlreadyRated: "❌ La contraparte ya había sido calificada.",
   couldNotApplyMargin:
@@ -575,7 +580,7 @@ export default {
   lendType: "🟢 Prestando",
   borrowType: "🔴 Pidiendo prestado",
   loanWizardPreview: (
-    type: string, // "🔴 Pidiendo prestado" o "🟢 Prestando"
+    type: string,
     fiat: string,
     amount: string,
     apr: string,
@@ -586,13 +591,13 @@ export default {
   ) =>
     `🏦 *Estructurando Préstamo (${type})*\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💵 **Capital (FIAT):** \`${amount} ${fiat}\`\n` +
-    `🛡️ **Garantía (LTV):** \`${ltv}\`\n` +
-    `📈 **Tasa Anual (APR):** \`${apr}\`\n` +
-    `⏳ **Duración:** \`${duration} mes(es)\`\n` +
-    `🏦 **Método de pago:** \`${method}\`\n` +
+    `▪️ Capital: \`${amount} ${fiat}\`\n` +
+    `▪️ Garantía (LTV): \`${ltv}\`\n` +
+    `▪️ Tasa Anual (APR): \`${apr}\`\n` +
+    `▪️ Plazo: \`${duration} mes(es)\`\n` +
+    `▪️ Método de pago: \`${method}\`\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💡 _Para abortar el proceso escribe /exit_\n\n` +
+    `_Para abortar el proceso escribe /exit_\n\n` +
     `👉 *${prompt}*`,
   channelLoanOffer: ({
     action,
@@ -611,15 +616,16 @@ export default {
 
     return (
       `**${action}**\n\n` +
-      `Por ${draft.amount} ${draft.fiat} ${getFiatEmoji(draft.fiat!)}\n` +
+      `Por ${draft.amount} ${draft.fiat}${getFiatEmoji(draft.fiat!)}\n` +
       `💳 Método: ${method}\n` +
       `⏳ Plazo: ${draft.durationMonths} meses\n` +
       `📈 APR (Tasa Anual): ${draft.apr}%\n` +
       `🛡️ LTV (Garantía): ${draft.ltv}%\n\n` +
-      `🤝 Tiene ${user.tradesCount} operaciones exitosas\n` +
-      `⏳ Usa el bot hace ${daysUsing} días\n\n` +
+      `👤 **Contraparte:**\n` +
+      `▪️ ${user.tradesCount} operaciones exitosas\n` +
+      `▪️ Usa el bot hace ${daysUsing} días\n` +
+      `▪️ ${user.rating.toFixed(1)} ${"⭐".repeat(Math.floor(user.rating))} (${user.ratingCount})\n\n` +
       `${hashtag}\n` +
-      `${user.rating.toFixed(1)} ${"⭐".repeat(Math.floor(user.rating))} (${user.ratingCount})\n\n` +
       `\`${loanId}\``
     );
   },
@@ -632,7 +638,7 @@ export default {
   invalidLoanDuration:
     "❌ La duración debe ser un número entero (o rango, ej: 3-6) entre 1 y 120 meses. Intenta de nuevo:",
   invalidLoanDurationRange: (min: number, max: number) =>
-    `❌ La duración debe estar entre ${min} y ${max} meses. Intenta de nuevo:`,
+    `❌ La duración debe estar entre ${min} y${max} meses. Intenta de nuevo:`,
   promptLoanLTV:
     "🛡️ Selecciona el Loan-to-Value (LTV) 👇\n_Define cuánto colateral se exige. Ej: Con un LTV del 50%, un préstamo de $1,000 requerirá bloquear $2,000 en Bitcoin como garantía._",
   promptLoanDuration: "Escribe la duración del contrato en **meses**:",
@@ -644,7 +650,7 @@ export default {
   invalidLoanAPR:
     "❌ El APR debe ser un número válido (mayor a 0 y menor a 100). Puedes usar decimales. Intenta de nuevo:",
   maxLoansReached:
-    "❌ Haz alcanzado el límite de anuncios de préstamos publicados.",
+    "❌ Has alcanzado el límite de anuncios de préstamos publicados.",
 
   cancelLoanForbidden:
     "❌ No puedes cancelar un préstamo una vez que el dinero FIAT ha sido enviado o el contrato está activo. Si hay un problema, debes abrir una disputa usando /dispute.",
@@ -662,11 +668,11 @@ export default {
     id,
   }: any) =>
     `*${type}*\n\n` +
-    `💵 Capital: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
-    `🛡️ Garantía (LTV): ${ltv}%\n` +
-    `📈 APR: ${apr}%\n` +
-    `⏳ Plazo: ${duration} meses\n` +
-    `💳 Método: ${method}\n\n` +
+    `▪️ Capital: ${amount} ${fiat}${getFiatEmoji(fiat)}\n` +
+    `▪️ Garantía (LTV): ${ltv}%\n` +
+    `▪️ APR: ${apr}%\n` +
+    `▪️ Plazo: ${duration} meses\n` +
+    `▪️ Método: ${method}\n\n` +
     `¿Estás seguro de que deseas tomar esta oferta?\n\n` +
     `ID: \`${id}\``,
   loanTakerFinalConfirm: ({
@@ -683,19 +689,19 @@ export default {
   }: any) => {
     let text =
       `📋 *Resumen Final del Préstamo*\n\n` +
-      `💵 Capital: ${amount} ${fiat}\n` +
-      `⏳ Plazo: ${duration} meses\n` +
-      `💳 Método: ${method}\n\n`;
+      `▪️ Capital: ${amount}${fiat}\n` +
+      `▪️ Plazo: ${duration} meses\n` +
+      `▪️ Método: ${method}\n\n`;
 
     if (role === "LENDER") {
-      text += `📈 APR: ${apr}%\n`;
-      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn} ${fiat}\n`;
+      text += `▪️ APR: ${apr}%\n`;
+      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn}${fiat}\n`;
       text += `_(El prestatario depositará colateral en BTC para asegurar tu capital)_\n\n`;
     } else {
-      text += `🛡️ Garantía (LTV): ${ltv}%\n`;
-      text += `📈 Interés a pagar (APR): ${apr}%\n`;
-      text += `💰 **Total a devolver:** ${totalReturn} ${fiat}\n`;
-      text += `🔒 Colateral estimado a bloquear: ${estimatedCollateral} BTC\n`;
+      text += `▪️ Garantía (LTV): ${ltv}%\n`;
+      text += `▪️ Interés a pagar (APR): ${apr}%\n`;
+      text += `💰 **Total a devolver:** ${totalReturn}${fiat}\n`;
+      text += `🔒 Colateral estimado a bloquear: ${estimatedCollateral} BTC\n\n`;
     }
     text += `¿Deseas confirmar los términos y notificar a la contraparte?\n\nID: \`${id}\``;
     return text;
@@ -718,31 +724,31 @@ export default {
   }: any) => {
     let text =
       `Alguien ha aceptado tu oferta de préstamo y ha definido los términos exactos:\n\n` +
-      `💵 Capital: ${amount} ${fiat}\n` +
-      `⏳ Plazo: ${duration} meses\n` +
-      `💳 Método: ${method}\n\n`;
+      `▪️ Capital: ${amount}${fiat}\n` +
+      `▪️ Plazo: ${duration} meses\n` +
+      `▪️ Método: ${method}\n\n`;
 
     if (role === "LENDER") {
-      text += `📈 APR: ${apr}%\n`;
-      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn} ${fiat}\n`;
+      text += `▪️ APR: ${apr}%\n`;
+      text += `💰 **A cobrar al finalizar (Aprox):** ${totalReturn}${fiat}\n`;
       text += `_(El prestatario bloqueará ${collateralSats} BTC como garantía)_\n\n`;
     } else {
-      text += `🛡️ Garantía (LTV): ${ltv}%\n`;
-      text += `📈 Interés a pagar (APR): ${apr}%\n`;
-      text += `💰 **Total a devolver:** ${totalReturn} ${fiat}\n`;
+      text += `▪️ Garantía (LTV): ${ltv}%\n`;
+      text += `▪️ Interés a pagar (APR): ${apr}%\n`;
+      text += `💰 **Total a devolver:** ${totalReturn}${fiat}\n`;
       text += `🔒 Colateral a bloquear: ${collateralSats} BTC\n\n`;
     }
 
     text +=
       `👤 **Datos de la contraparte:**\n` +
-      `🤝 Operaciones: ${trades}\n` +
-      `⏳ Antigüedad: ${days} días\n` +
-      `⭐ Reputación: ${rating.toFixed(1)}/5.0\n\n` +
-      `¿Deseas aceptar este contrato y avanzar al Escrow?\n\nID: \`${id}\``;
+      `▪️ Operaciones: ${trades}\n` +
+      `▪️ Antigüedad: ${days} días\n` +
+      `▪️ Reputación: ${rating.toFixed(1)}/5.0\n\n` +
+      `¿Deseas aceptar este contrato y avanzar al fondeo de la bóveda?\n\nID: \`${id}\``;
     return text;
   },
   promptLoanExactAmount: (range: string, fiat: string) =>
-    `Esta oferta de préstamo permite un rango de capital de **${range} ${fiat}**.\n\n` +
+    `Esta oferta de préstamo permite un rango de capital de **${range}${fiat}**.\n\n` +
     `💬 *Escribe en el chat el monto exacto* que deseas (solo números):`,
   promptLoanExactDuration: (range: string) =>
     `Esta oferta permite un plazo de entre **${range} meses**.\n\n` +
@@ -756,7 +762,7 @@ export default {
     `_Una vez se confirme la transacción (2 confirmaciones), se le avisará al prestamista para que te envíe el FIAT. Asegúrate de enviar la cantidad EXACTA._`,
 
   waitBorrowerDeposit:
-    "⏳ *Préstamo Aceptado.*\n\nAhora estamos esperando a que el prestatario deposite el Bitcoin de garantía en el Escrow. Te notificaremos cuando los fondos estén asegurados en la blockchain.",
+    "⏳ *Préstamo Aceptado.*\n\nAhora estamos esperando a que el prestatario deposite el Bitcoin de garantía en la bóveda multifirma. Te notificaremos cuando los fondos estén asegurados en la blockchain.",
 
   loanCollateralSecuredBorrower: (lenderContact: string, loanId: string) =>
     `✅ *¡Garantía bloqueada y confirmada!* (\`${loanId}\`)\n\n` +
@@ -774,7 +780,186 @@ export default {
     `El prestatario ha asegurado exitosamente su Bitcoin en la bóveda multifirma.\n\n` +
     `🗣 **Contacta al prestatario aquí:** ${borrowerContact}\n\n` +
     `**INSTRUCCIONES:**\n` +
-    `Por favor, procede a desembolsar el capital acordado de **${fiatAmount} ${fiatCode}** al prestatario a través de su método de pago.\n\n` +
+    `Por favor, procede a desembolsar el capital acordado de **${fiatAmount}${fiatCode}** al prestatario a través de su método de pago.\n\n` +
     `Una vez que le envíes el dinero, ejecuta este comando para iniciar el reloj del préstamo:\n` +
     `\`/fiatsent ${loanId}\``,
+  loanFiatSentToLender: (loanId: string) =>
+    `✅ Has marcado el desembolso del préstamo \`${loanId}\` como enviado.\n\n` +
+    `El prestatario ha sido notificado para que revise su cuenta. El contrato pasará a estar **ACTIVO** y el tiempo comenzará a correr **únicamente** cuando confirme la recepción del dinero.\n\n` +
+    `⏳ Si la contraparte no confirma el recibo en un plazo razonable, podrás abrir una disputa para que un administrador revise el caso.`,
+
+  loanFiatSentToBorrower: (loanId: string, lenderName: string) =>
+    `🔔 *¡El prestamista ha enviado el FIAT!*\n\n` +
+    `@${lenderName} indica que ya ha transferido el capital a tu cuenta para el préstamo \`${loanId}\`.\n\n` +
+    `Por favor, revisa tu cuenta bancaria o método de pago. Una vez verifiques que los fondos están disponibles, haz clic en el botón de confirmación 👇.\n\n` +
+    `⚠️ El contrato no pasará a estado ACTIVO hasta que confirmes la recepción.\n\n` +
+    `⚖️ *¿No has recibido el dinero?* Si ha pasado el tiempo de procesamiento habitual y los fondos no llegan, puedes ejecutar /dispute para abrir una disputa.`,
+  noActiveLoansFound:
+    "❌ No se han encontrado préstamos a los cuales puedas hacer pagos.",
+  btnConfirmReceipt: "✅ Confirmar Recepción",
+  promptRepayAmount: (
+    baseAmount: number,
+    totalInterest: number,
+    amountRepaid: number,
+    fiatCode: string,
+    lenderUsername: string,
+  ) => {
+    const totalDebt = baseAmount + totalInterest;
+    const remainingDebt = Math.max(0, totalDebt - amountRepaid);
+
+    return (
+      `📋 *Resumen de pago del Préstamo*\n\n` +
+      `▪️ Capital prestado: \`${baseAmount.toFixed(2)} ${fiatCode}\`\n` +
+      `▪️ Interés fijo (plazo completo): \`${totalInterest.toFixed(2)} ${fiatCode}\`\n` +
+      `▪️ Deuda total: \`${totalDebt.toFixed(2)} ${fiatCode}\`\n` +
+      `▪️ Monto ya pagado: \`${amountRepaid.toFixed(2)} ${fiatCode}\`\n` +
+      `▪️ **Faltante por pagar:** \`${remainingDebt.toFixed(2)} ${fiatCode}\`\n\n` +
+      `⚠️ *IMPORTANTE:* Debes realizar la transferencia de los fondos a tu contraparte **antes** de registrar el pago aquí.\n` +
+      `🛑 Si aún no has transferido el dinero, ejecuta /exit para cancelar esta acción y comunícate con @${lenderUsername} para coordinar.\n\n` +
+      `✅ Si ya transferiste la **totalidad del faltante** (\`${remainingDebt.toFixed(2)} ${fiatCode}\`), presiona el botón que aparece abajo.\n\n` +
+      `🔢 **¿Realizaste un pago parcial?**\n` +
+      `Escribe ahora mismo en este chat la cantidad exacta que ya le has transferido (solo números):`
+    );
+  },
+  btnRepayFull: "✅ Pagué el monto total",
+  receiptConfirmedBorrower: (loanId: string) =>
+    `✅ *Recepción confirmada*\n\n` +
+    `Has confirmado exitosamente la recepción de los fondos para el préstamo \`${loanId}\`.\n\n` +
+    `El contrato está ahora **ACTIVO**. Por favor, asegúrate de cumplir con el repago en las fechas acordadas para recuperar tu colateral.\n\n` +
+    `🔍 Puedes usar el comando /loanstatus en cualquier momento para revisar el estado, el tiempo restante y los detalles de tu préstamo.\n\n` +
+    `💡 *Consejo:* Si lo necesitas, puedes comunicarte con el prestamista para realizar **pagos parciales** a lo largo del plazo; esto te ayudará a reducir tu deuda y evitar la liquidación de tu garantía.`,
+
+  receiptConfirmedLender: (loanId: string) =>
+    `✅ *El prestatario ha confirmado la recepción*\n\n` +
+    `La contraparte acaba de confirmar que recibió el capital del préstamo \`${loanId}\` en su cuenta.\n\n` +
+    `El contrato está oficialmente **ACTIVO** y el tiempo del plazo ha comenzado a correr desde este momento.\n\n` +
+    `🔍 Puedes usar el comando /loanstatus en cualquier momento para monitorear el estado, el tiempo restante y los detalles de este préstamo.\n\n` +
+    `💡 *Consejo:* Recuerda que puedes coordinar directamente con el prestatario para recibir **pagos parciales** durante la vigencia del contrato, en caso de que ambos lo consideren conveniente.`,
+  selectRepaidLoan:
+    "👇 Selecciona el préstamo para el cual has hecho un pago (ya sea parcial o completo):",
+
+  paymentReported: (
+    username: string,
+    amount: number,
+    fiat: string,
+    loanId: string,
+  ) =>
+    `🔔 *Nuevo reporte de pago*\n\nEl prestatario @${username} indica que ha enviado un pago de *${amount}${fiat}* para el préstamo \`${loanId}\`.\n\n¿Confirmas haber recibido este dinero en tu cuenta?`,
+  btnConfirmPayment: "✅ Sí, recibí el pago",
+  btnRejectPayment: "❌ No, rechazar",
+  hasPendingPayment: "❌ Ya tienes un pago pendiente por confirmar.",
+  paymentPendingConfirmation:
+    "✅ Tu reporte de pago ha sido enviado al prestamista. Te notificaremos cuando lo confirme.",
+  borrowerPaymentConfirmed: (amount: number, fiat: string) =>
+    `✅ Tu pago de ${amount}${fiat} fue confirmado por el prestamista.`,
+  borrowerPaymentRejected: (amount: number, fiat: string) =>
+    `❌ El prestamista ha denegado la recepción de tu pago de ${amount}${fiat}.`,
+  paymentConfirmedAction: (amount: number, fiat: string) =>
+    `✅ Has confirmado la recepción de ${amount}${fiat}.`,
+  paymentRejectedAction: "❌ Has rechazado el pago.",
+  paymentError: "❌ Error procesando el pago o este ya había sido procesado.",
+  loanFullyRepaidLender: (loanId: string) =>
+    `🎉 *¡Préstamo Pagado!*\n\nEl prestatario ha saldado por completo la deuda del préstamo \`${loanId}\`.\nEl contrato se ha cerrado exitosamente.`,
+
+  loanFullyRepaidBorrower: (loanId: string) =>
+    `🎉 *¡Préstamo Saldado!*\n\nHas pagado exitosamente el total del préstamo \`${loanId}\`.\n\nTu colateral en Bitcoin ya está listo para ser liberado. Ejecuta el siguiente comando para retirarlo a tu billetera:\n\n\`/claim ${loanId}\``,
+  invalidCommandUsage: (format: string) =>
+    `❌ Uso incorrecto del comando.\nFormato esperado: \`${format}\``,
+
+  roleBorrower: "Prestatario (Recibes el dinero)",
+  roleLender: "Prestamista (Prestas el dinero)",
+
+  loanStatusMessage: (params: {
+    id: string;
+    role: string;
+    status: string;
+    apr: number;
+    fiatCode: string;
+    fPrincipal: string;
+    fInterest: string;
+    fTotal: string;
+    fRepaid: string;
+    fRemaining: string;
+    fLtv: string;
+    liquidationLtv: number;
+    borrower: string;
+    escrowAddress: string;
+  }) => {
+    return (
+      `📊 *Préstamo:* \`${params.id}\`\n` +
+      `👤 *Tu rol:* ${params.role}\n` +
+      `📌 *Estado:* \`${params.status}\`\n\n` +
+      `📈 *Riesgo (LTV):* *${params.fLtv}%* _(Se liquida al ${params.liquidationLtv}%)_\n\n` +
+      `💰 *Deuda (${params.fiatCode}):*\n` +
+      `▪️ Capital: ${params.fPrincipal}\n` +
+      `▪️ Interés: ${params.fInterest} _(${params.apr}% total)_\n` +
+      `▪️ Pagado: ${params.fRepaid}\n` +
+      `▪️ *Restante:* *${params.fRemaining}*\n\n` +
+      `💡 *¿Necesitas bajar tu LTV?*\n` +
+      `1️⃣ *Añadir colateral:* Deposita BTC en \`${params.escrowAddress}\`. El LTV se actualizará automáticamente tras 2 confirmaciones.\n` +
+      `2️⃣ *Pagar deuda:* Contacta a @${params.borrower} para acordar un pago parcial o total. Una vez hecho, usa el comando /repaid.`
+    );
+  },
+
+  liquidationSuccess: (txid: string) =>
+    `✅ *Liquidación Completada Exitosamente*\n\n` +
+    `Has reclamado el colateral en Bitcoin debido al incumplimiento del prestatario.\n\n` +
+    `🔗 [Ver transacción en el explorador](${mempoolBaseURL}/tx/${txid})`,
+
+  ltvLiquidatedBorrower: (loanId: string) =>
+    `📉 *Colateral Liquidado (Caída de Precio)*\n\n` +
+    `El LTV de tu préstamo \`${loanId}\` superó el límite de riesgo del 90% debido a la caída del precio de Bitcoin.\n\n` +
+    `El contrato ha pasado a estado de liquidación para proteger el capital del prestamista. Deberías reclamar el 5% sobrante usando /claim.`,
+
+  ltvLiquidatedLender: (loanId: string) =>
+    `✅ *Liquidación por LTV Disponible*\n\n` +
+    `El LTV del préstamo \`${loanId}\` superó el límite crítico del 90%.\n\n` +
+    `Puedes ejecutar el comando \`/claim ${loanId}\` para reclamar el 95% del colateral en Bitcoin (5% fee del protocolo) y asegurar tu inversión.`,
+
+  loanExpiredBorrower: (loanId: string) =>
+    `⚠️ *Tiempo Expirado - Préstamo Expirado*\n\n` +
+    `El periodo de gracia de tu préstamo \`${loanId}\` ha expirado sin que se completaran los pagos correspondientes.\n\n` +
+    `El prestamista ahora tiene derecho a cobrar su deuda. Si tu garantía superaba el valor de la deuda, podrás usar \`/claim ${loanId}\` posteriormente para retirar el excedente.`,
+
+  loanExpiredLender: (loanId: string) =>
+    `✅ *Deuda Recuperable Disponible*\n\n` +
+    `El prestatario no pagó a tiempo el préstamo \`${loanId}\` y el periodo de gracia ha finalizado.\n\n` +
+    `Puedes ejecutar el comando \`/claim ${loanId}\` para retirar el capital prestado junto con los intereses correspondientes de la garantía.`,
+
+  ltvWarning: (currentLTV: number, liquidationThreshold: number) =>
+    `⚠️ *Alerta de Riesgo de LTV*\n\n` +
+    `El LTV de tu préstamo actual ha subido al *${currentLTV.toFixed(2)}%*.\n\n` +
+    `Recuerda que si alcanza o supera el límite de *${liquidationThreshold}%*, tu préstamo pasará a estado de liquidación automática para proteger al prestamista. Te sugerimos agregar colateral o hacer un pago parcial. Ejecuta /loanstatus para saber cómo.`,
+
+  settleBtnLoanRefund: "Reembolso (prestatario)",
+  settleBtnLoanRelease: "Forzar liberación (prestatario)",
+  settleBtnLoanLiquidation: "Forzar liquidación (prestamista)",
+  settleBtnLoanActive: "Volver a Activo",
+  settlePromptLoan: (
+    loanId: string,
+    lenderHandle: string,
+    borrowerHandle: string,
+  ) =>
+    `⚖️ *Resolver disputa de Préstamo* \`${loanId}\`\n\n` +
+    `👤 Prestatario: ${lenderHandle}\n` +
+    `👤 Prestamista: ${borrowerHandle}\n\n` +
+    `Selecciona una resolución:`,
+  loanDisputeRefunded: (loanId: string) =>
+    `✅ *Disputa resuelta (Reembolso)*\n\n` +
+    `El administrador ha resuelto la disputa del préstamo \`${loanId}\` y ha autorizado el reembolso.\n\n` +
+    `El colateral ya está disponible para que el prestatario lo retire íntegramente (sin comisión del bot). Usa el comando /claim para extraer los fondos.`,
+
+  loanDisputeReleased: (loanId: string) =>
+    `✅ *Disputa resuelta (Liberación Forzada)*\n\n` +
+    `El administrador ha resuelto la disputa del préstamo \`${loanId}\` y ha forzado la liberación del colateral.\n\n` +
+    `El colateral ya está disponible para que el prestatario lo retire (se deducirá la comisión del protocolo de la red). Usa el comando /claim para extraer los fondos.`,
+
+  loanDisputeRestoredToActive: (loanId: string) =>
+    `🔄 *Disputa cerrada (Préstamo activo nuevamente)*\n\n` +
+    `El administrador ha cerrado la disputa del préstamo \`${loanId}\` y lo ha devuelto al estado *Activo*.\n\n` +
+    `El préstamo continúa su curso normal. Por favor, mantengan la comunicación para finalizar el acuerdo.`,
+  loanRepaymentAlreadyPending: (loanId: string) =>
+    `⏳ *Pago pendiente de revisión*\n\n` +
+    `Ya has reportado un pago para el préstamo \`${loanId}\` y está a la espera de confirmación.\n\n` +
+    `Por favor, espera a que el prestamista revise y procese tu aviso actual antes de intentar reportar un nuevo pago.`,
 };

@@ -1,9 +1,8 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { orders } from "../db/schema.js";
+import { loans, orders } from "../db/schema.js";
 import {
-  getOrder,
-  tryTransitionOrderStatus,
-  tryConditionalUpdate,
+  tryConditionalLoanUpdate,
+  tryConditionalOrderUpdate,
 } from "../db/orders.js";
 import { getUser } from "../db/users.js";
 import { dictionaries, getUserDict } from "../locales/index.js";
@@ -12,9 +11,9 @@ import { generateVerificationCode } from "../utils/crypto.js";
 import { isAdmin } from "../utils/admin.js";
 import { buildSettleDisputeKeyboard } from "../shared/keyboards.js";
 import { escapeMarkdown } from "../utils/format.js";
-import { getParties } from "../utils/parties.js";
 import { safeRemoveMarkup } from "../utils/telegram.js";
-import { OrderStatus } from "../shared/constants.js";
+import { LoanStatus, OrderStatus } from "../shared/constants.js";
+import { getContract, tryTransitionContract } from "../db/contracts.js";
 
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
 
@@ -29,46 +28,55 @@ const disputeCodesCache = new Map<
   { buyerCode: string; sellerCode: string }
 >();
 
-const DISPUTE_ELIGIBLE_STATUSES = [OrderStatus.Active, OrderStatus.FiatSent, OrderStatus.CancelRequested];
+const DISPUTE_ELIGIBLE_STATUSES = [
+  OrderStatus.Active,
+  OrderStatus.FiatSent,
+  OrderStatus.CancelRequested,
+  LoanStatus.WaitingDisbursement,
+  LoanStatus.DisbursementSent,
+  LoanStatus.Active,
+  LoanStatus.CancelRequested,
+];
 
-async function getDisplayHandle(
-  telegramId: number,
-): Promise<string> {
+async function getDisplayHandle(telegramId: number): Promise<string> {
   const user = await getUser(telegramId);
   if (user) return `@${escapeMarkdown(user.username)}`;
   return `ID: ${telegramId}`;
 }
 
-export async function openDispute(ctx: CommandContext, orderId: string) {
+export async function openDispute(ctx: CommandContext, id: string) {
   const userId = ctx.from.id;
   const dict = ctx.dict;
 
-  const order = await getOrder(orderId);
-  if (!order) return ctx.reply(dict.orderNotFound);
+  const contract = await getContract(id);
+  if (!contract) return ctx.reply(dict.orderNotFound);
 
-  const { sellerId, buyerId } = getParties(order);
+  const sellerId = contract.sellerOrLenderId;
+  const buyerId = contract.buyerOrBorrowerId;
+
   if (userId !== sellerId && userId !== buyerId)
     return ctx.reply(dict.unauthorizedAccess);
   if (!sellerId || !buyerId) return ctx.reply(dict.disputeNotAllowed);
 
-  const previousStatus = order.status;
+  const previousStatus = contract.data.status!;
 
-  const didTransition = await tryTransitionOrderStatus(
-    orderId,
+  const didTransition = await tryTransitionContract(
+    contract,
     DISPUTE_ELIGIBLE_STATUSES,
-    OrderStatus.Dispute,
+    "DISPUTE",
     { cancelRequestedBy: null },
   );
 
   if (!didTransition) {
-    const fresh = await getOrder(orderId);
-    if (fresh?.status === OrderStatus.Dispute) return ctx.reply(dict.disputeAlreadyOpen);
+    const fresh = await getContract(id);
+    if (fresh!.data.status === "DISPUTE")
+      return ctx.reply(dict.disputeAlreadyOpen);
     return ctx.reply(dict.disputeNotAllowed);
   }
 
   const buyerCode = generateVerificationCode();
   const sellerCode = generateVerificationCode();
-  disputeCodesCache.set(orderId, { buyerCode, sellerCode });
+  disputeCodesCache.set(id, { buyerCode, sellerCode });
 
   const buyer = await getUser(buyerId);
   const seller = await getUser(sellerId);
@@ -77,18 +85,18 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
 
   await ctx.telegram.sendMessage(
     buyerId,
-    buyerDict.disputeOpened(buyerCode, orderId),
+    buyerDict.disputeOpened(buyerCode, id),
     { parse_mode: "Markdown" },
   );
   await ctx.telegram.sendMessage(
     sellerId,
-    sellerDict.disputeOpened(sellerCode, orderId),
+    sellerDict.disputeOpened(sellerCode, id),
     { parse_mode: "Markdown" },
   );
 
   if (!ADMIN_GROUP_ID) {
     console.error(
-      `ADMIN_GROUP_ID no está configurado: no se pudo notificar la disputa de la orden ${orderId}`,
+      `ADMIN_GROUP_ID no está configurado: no se pudo notificar la disputa de la orden ${id}`,
     );
     return;
   }
@@ -96,12 +104,12 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
   await ctx.telegram.sendMessage(
     ADMIN_GROUP_ID,
     dictionaries.es.disputeAdminGroupMessage({
-      orderId: order.id,
-      type: order.type,
-      fiatCode: order.fiatCode,
-      amountFiat: `${order.fiatAmountLocked}`,
+      orderId: contract.data.id,
+      type: contract.data.type,
+      fiatCode: contract.data.fiatCode,
+      amountFiat: `${contract.data.fiatAmountLocked}`,
       status: previousStatus,
-      escrowAddress: order.escrowAddress || "N/A",
+      escrowAddress: contract.data.escrowAddress || "N/A",
       buyerUsername: escapeMarkdown(buyer!.username),
       sellerUsername: escapeMarkdown(seller!.username),
       buyerCode,
@@ -111,34 +119,50 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
   );
 }
 
-export async function takeDispute(ctx: CommandContext, orderId: string) {
+export async function takeDispute(ctx: CommandContext, contractId: string) {
   const adminId = ctx.from.id;
   const dict = ctx.dict;
 
   if (!isAdmin(adminId)) return ctx.reply(dict.adminOnlyAction);
 
-  const order = await getOrder(orderId);
-  if (!order || order.status !== OrderStatus.Dispute)
+  const contract = await getContract(contractId);
+  const disputeStatus = contract!.isLoan
+    ? LoanStatus.Dispute
+    : OrderStatus.Dispute;
+
+  if (!contract || contract.data.status !== disputeStatus)
     return ctx.reply(dict.disputeNotFoundOrNotOpen);
 
-  // Asignación atómica: solo si nadie más la tomó ya (evita doble-asignación
-  // si dos admins ejecutan /takedispute casi simultáneamente).
-  const assigned = await tryConditionalUpdate(
-    orderId,
-    and(eq(orders.status, OrderStatus.Dispute), isNull(orders.disputeAdminId)),
-    { disputeAdminId: adminId },
-  );
+  let assigned = false;
+  if (contract.isLoan) {
+    assigned = await tryConditionalLoanUpdate(
+      contractId,
+      and(eq(loans.status, disputeStatus), isNull(loans.disputeAdminId)),
+      { disputeAdminId: adminId },
+    );
+  } else {
+    assigned = await tryConditionalOrderUpdate(
+      contractId,
+      and(
+        eq(orders.status, OrderStatus.Dispute),
+        isNull(orders.disputeAdminId),
+      ),
+      { disputeAdminId: adminId },
+    );
+  }
 
   if (!assigned) return ctx.reply(dict.disputeAlreadyTaken);
 
-  await ctx.reply(dict.disputeTakenSuccessAdmin(orderId), {
+  await ctx.reply(dict.disputeTakenSuccessAdmin(contractId), {
     parse_mode: "Markdown",
   });
 
   const adminUsername = ctx.from.username
     ? `@${escapeMarkdown(ctx.from.username)}`
     : `Admin (ID: ${adminId})`;
-  const { sellerId, buyerId } = getParties(order);
+
+  const sellerId = contract.sellerOrLenderId;
+  const buyerId = contract.buyerOrBorrowerId;
   if (!sellerId || !buyerId) return;
 
   const buyer = await getUser(buyerId);
@@ -146,7 +170,7 @@ export async function takeDispute(ctx: CommandContext, orderId: string) {
   const buyerDict = getUserDict(buyer?.language);
   const sellerDict = getUserDict(seller?.language);
 
-  const codes = disputeCodesCache.get(orderId);
+  const codes = disputeCodesCache.get(contractId);
 
   if (codes) {
     await ctx.telegram.sendMessage(
@@ -154,7 +178,7 @@ export async function takeDispute(ctx: CommandContext, orderId: string) {
       buyerDict.disputeTakenNotification(
         adminUsername,
         codes.buyerCode,
-        orderId,
+        contractId,
       ),
       { parse_mode: "Markdown" },
     );
@@ -163,23 +187,23 @@ export async function takeDispute(ctx: CommandContext, orderId: string) {
       sellerDict.disputeTakenNotification(
         adminUsername,
         codes.sellerCode,
-        orderId,
+        contractId,
       ),
       { parse_mode: "Markdown" },
     );
-    disputeCodesCache.delete(orderId);
+    disputeCodesCache.delete(contractId);
   } else {
     console.warn(
-      `Códigos de disputa no disponibles en memoria para la orden ${orderId} (¿reinicio del bot?)`,
+      `Códigos de disputa no disponibles en memoria para la orden ${contractId} (¿reinicio del bot?)`,
     );
     await ctx.telegram.sendMessage(
       buyerId,
-      buyerDict.disputeTakenNotificationNoCode(adminUsername, orderId),
+      buyerDict.disputeTakenNotificationNoCode(adminUsername, contractId),
       { parse_mode: "Markdown" },
     );
     await ctx.telegram.sendMessage(
       sellerId,
-      sellerDict.disputeTakenNotificationNoCode(adminUsername, orderId),
+      sellerDict.disputeTakenNotificationNoCode(adminUsername, contractId),
       { parse_mode: "Markdown" },
     );
   }
@@ -191,68 +215,148 @@ export async function settleCommand(ctx: CommandContext, orderId: string) {
 
   if (!isAdmin(adminId)) return ctx.reply(dict.adminOnlyAction);
 
-  const order = await getOrder(orderId);
-  if (!order || order.status !== OrderStatus.Dispute)
+  const contract = await getContract(orderId);
+  const disputeStatus = contract?.isLoan ? "DISPUTE" : OrderStatus.Dispute;
+
+  if (!contract || contract.data.status !== disputeStatus)
     return ctx.reply(dict.settleNotFoundOrNotInDispute);
-  if (order.disputeAdminId !== adminId)
+  if (contract.data.disputeAdminId !== adminId)
     return ctx.reply(dict.settleNotAssignedAdmin);
 
-  const { sellerId, buyerId } = getParties(order);
+  const sellerId = contract.sellerOrLenderId;
+  const buyerId = contract.buyerOrBorrowerId;
+
   if (!sellerId || !buyerId)
     return ctx.reply(dict.settleNotFoundOrNotInDispute);
 
   const buyerHandle = await getDisplayHandle(buyerId);
   const sellerHandle = await getDisplayHandle(sellerId);
 
-  await ctx.reply(dict.settlePrompt(orderId, buyerHandle, sellerHandle), {
-    parse_mode: "Markdown",
-    ...buildSettleDisputeKeyboard(
-      dict.settleBtnBuyer(buyerHandle),
-      dict.settleBtnSeller(sellerHandle),
-      dict.settleBtnRefund,
-      order.id,
-    ),
-  });
+  if (contract.isLoan) {
+    await ctx.reply(dict.settlePromptLoan(orderId, buyerHandle, sellerHandle), {
+      parse_mode: "Markdown",
+      ...buildSettleDisputeKeyboard(contract.data.id, [
+        {
+          text: dict.settleBtnLoanRefund,
+          prefix: "settle_loan_refund",
+        },
+        {
+          text: dict.settleBtnLoanRelease,
+          prefix: "settle_loan_release",
+        },
+        {
+          text: dict.settleBtnLoanLiquidation,
+          prefix: "settle_loan_liquidate",
+        },
+        {
+          text: dict.settleBtnLoanActive,
+          prefix: "settle_loan_active",
+        },
+      ]),
+    });
+  } else {
+    await ctx.reply(dict.settlePrompt(orderId, buyerHandle, sellerHandle), {
+      parse_mode: "Markdown",
+      ...buildSettleDisputeKeyboard(contract.data.id, [
+        {
+          text: dict.settleBtnBuyer(buyerHandle),
+          prefix: "settle_buyer",
+        },
+        {
+          text: dict.settleBtnSeller(buyerHandle),
+          prefix: "settle_seller",
+        },
+        {
+          text: dict.settleBtnRefund,
+          prefix: "settle_refund",
+        },
+      ]),
+    });
+  }
 }
 
-export type SettleResolution = "BUYER" | "SELLER" | "REFUND";
+export type SettleResolution =
+  | "BUYER"
+  | "SELLER"
+  | "REFUND"
+  | "LOAN_REFUND"
+  | "LOAN_RELEASE"
+  | "LOAN_LIQUIDATE"
+  | "LOAN_ACTIVE";
 
-// Invocado desde los 3 botones de /settle (ver index.ts).
 export async function resolveDispute(
   ctx: CallbackContext,
-  orderId: string,
+  contractId: string,
   resolution: SettleResolution,
 ) {
   const adminId = ctx.from.id;
   const dict = ctx.dict;
 
-  // el admin pudo haber sido removido de ADMIN_IDS
-  // después de que se le asignó la disputa.
   if (!isAdmin(adminId)) {
     return ctx.answerCbQuery(dict.adminOnlyAction, { show_alert: true });
   }
 
-  const order = await getOrder(orderId);
-  if (!order)
+  const contract = await getContract(contractId);
+  if (!contract)
     return ctx.answerCbQuery(dict.orderNotFound, { show_alert: true });
 
-  if (order.status !== OrderStatus.Dispute || order.disputeAdminId !== adminId) {
+  const disputeStatus = contract.isLoan ? "DISPUTE" : OrderStatus.Dispute;
+
+  if (
+    contract.data.status !== disputeStatus ||
+    contract.data.disputeAdminId !== adminId
+  ) {
     await safeRemoveMarkup(ctx);
     return ctx.answerCbQuery(
-      order.disputeAdminId !== adminId
+      contract.data.disputeAdminId !== adminId
         ? dict.settleNotAssignedAdmin
         : dict.settleStaleAction,
       { show_alert: true },
     );
   }
 
-  const toStatus = resolution === "BUYER" ? OrderStatus.Releasable : OrderStatus.Refundable;
+  let toStatus: any;
+  if (contract.isLoan) {
+    if (resolution === "LOAN_REFUND") toStatus = LoanStatus.Refundable;
+    else if (resolution === "LOAN_RELEASE") toStatus = LoanStatus.Releasable;
+    else if (resolution === "LOAN_ACTIVE") toStatus = LoanStatus.Active;
+    else if (resolution === "LOAN_LIQUIDATE") toStatus = LoanStatus.Liquidatable;
+    else
+      return ctx.answerCbQuery("Resolución no válida para préstamos", {
+        show_alert: true,
+      });
+  } else {
+    if (resolution === "BUYER") toStatus = OrderStatus.Releasable;
+    else if (resolution === "SELLER") toStatus = OrderStatus.Refundable;
+    else if (resolution === "REFUND") toStatus = OrderStatus.Refundable;
+    else
+      return ctx.answerCbQuery("Resolución no válida para órdenes", {
+        show_alert: true,
+      });
+  }
 
-  const resolved = await tryConditionalUpdate(
-    orderId,
-    and(eq(orders.status, OrderStatus.Dispute), eq(orders.disputeAdminId, adminId)),
-    { status: toStatus, disputeResolution: resolution },
-  );
+  const updateData =
+    resolution === "LOAN_ACTIVE"
+      ? { status: toStatus, disputeResolution: null, disputeAdminId: null }
+      : { status: toStatus, disputeResolution: resolution };
+
+  let resolved = false;
+  if (contract.isLoan) {
+    resolved = await tryConditionalLoanUpdate(
+      contractId,
+      and(eq(loans.status, disputeStatus), eq(loans.disputeAdminId, adminId)),
+      updateData,
+    );
+  } else {
+    resolved = await tryConditionalOrderUpdate(
+      contractId,
+      and(
+        eq(orders.status, OrderStatus.Dispute),
+        eq(orders.disputeAdminId, adminId),
+      ),
+      updateData,
+    );
+  }
 
   if (!resolved) {
     await safeRemoveMarkup(ctx);
@@ -262,18 +366,12 @@ export async function resolveDispute(
   await safeRemoveMarkup(ctx);
   await ctx.answerCbQuery();
 
-  const resolutionLabel =
-    resolution === "BUYER"
-      ? dict.settleResolutionBuyerLabel
-      : resolution === "SELLER"
-        ? dict.settleResolutionSellerLabel
-        : dict.settleResolutionRefundLabel;
-
-  await ctx.reply(dict.settleResolvedAdmin(orderId, resolutionLabel), {
+  await ctx.reply(dict.settleResolvedAdmin(contractId, resolution), {
     parse_mode: "Markdown",
   });
 
-  const { sellerId, buyerId } = getParties(order);
+  const sellerId = contract.sellerOrLenderId;
+  const buyerId = contract.buyerOrBorrowerId;
   if (!sellerId || !buyerId) return;
 
   const buyer = await getUser(buyerId);
@@ -281,38 +379,75 @@ export async function resolveDispute(
   const buyerDict = getUserDict(buyer?.language);
   const sellerDict = getUserDict(seller?.language);
 
-  if (resolution === "BUYER") {
-    await ctx.telegram.sendMessage(
-      buyerId,
-      buyerDict.settleBuyerWinsNotifyBuyer(orderId),
-      { parse_mode: "Markdown" },
-    );
-    await ctx.telegram.sendMessage(
-      sellerId,
-      sellerDict.settleBuyerWinsNotifySeller(orderId),
-      { parse_mode: "Markdown" },
-    );
-  } else if (resolution === "SELLER") {
-    await ctx.telegram.sendMessage(
-      sellerId,
-      sellerDict.settleSellerWinsNotifySeller(orderId),
-      { parse_mode: "Markdown" },
-    );
-    await ctx.telegram.sendMessage(
-      buyerId,
-      buyerDict.settleSellerWinsNotifyBuyer(orderId),
-      { parse_mode: "Markdown" },
-    );
+  if (contract.isLoan) {
+    if (resolution === "LOAN_REFUND") {
+      await ctx.telegram.sendMessage(
+        buyerId,
+        buyerDict.loanDisputeRefunded(contractId),
+        { parse_mode: "Markdown" },
+      );
+      await ctx.telegram.sendMessage(
+        sellerId,
+        sellerDict.loanDisputeRefunded(contractId),
+        { parse_mode: "Markdown" },
+      );
+    } else if (resolution === "LOAN_RELEASE") {
+      await ctx.telegram.sendMessage(
+        buyerId,
+        buyerDict.loanDisputeReleased(contractId),
+        { parse_mode: "Markdown" },
+      );
+      await ctx.telegram.sendMessage(
+        sellerId,
+        sellerDict.loanDisputeReleased(contractId),
+        { parse_mode: "Markdown" },
+      );
+    } else if (resolution === "LOAN_ACTIVE") {
+      await ctx.telegram.sendMessage(
+        buyerId,
+        buyerDict.loanDisputeRestoredToActive(contractId),
+        { parse_mode: "Markdown" },
+      );
+      await ctx.telegram.sendMessage(
+        sellerId,
+        sellerDict.loanDisputeRestoredToActive(contractId),
+        { parse_mode: "Markdown" },
+      );
+    }
   } else {
-    await ctx.telegram.sendMessage(
-      buyerId,
-      buyerDict.settleCancelledNotifyBuyer(orderId),
-      { parse_mode: "Markdown" },
-    );
-    await ctx.telegram.sendMessage(
-      sellerId,
-      sellerDict.settleCancelledNotifySeller(orderId),
-      { parse_mode: "Markdown" },
-    );
+    if (resolution === "BUYER") {
+      await ctx.telegram.sendMessage(
+        buyerId,
+        buyerDict.settleBuyerWinsNotifyBuyer(contractId),
+        { parse_mode: "Markdown" },
+      );
+      await ctx.telegram.sendMessage(
+        sellerId,
+        sellerDict.settleBuyerWinsNotifySeller(contractId),
+        { parse_mode: "Markdown" },
+      );
+    } else if (resolution === "SELLER") {
+      await ctx.telegram.sendMessage(
+        sellerId,
+        sellerDict.settleSellerWinsNotifySeller(contractId),
+        { parse_mode: "Markdown" },
+      );
+      await ctx.telegram.sendMessage(
+        buyerId,
+        buyerDict.settleSellerWinsNotifyBuyer(contractId),
+        { parse_mode: "Markdown" },
+      );
+    } else {
+      await ctx.telegram.sendMessage(
+        buyerId,
+        buyerDict.settleCancelledNotifyBuyer(contractId),
+        { parse_mode: "Markdown" },
+      );
+      await ctx.telegram.sendMessage(
+        sellerId,
+        sellerDict.settleCancelledNotifySeller(contractId),
+        { parse_mode: "Markdown" },
+      );
+    }
   }
 }

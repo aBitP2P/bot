@@ -6,6 +6,6 @@ export async function disputeCommand(ctx: CommandContext) {
   const args = ctx.message.text.split(' ');
   if (args.length < 2) return ctx.reply(dict.commandUsage('/dispute <ORDER_ID>'), { parse_mode: 'Markdown' });
 
-  const orderId = args[1] as string;
-  return openDispute(ctx, orderId);
+  const contractId = args[1] as string;
+  return await openDispute(ctx, contractId);
 }

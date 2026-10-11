@@ -1,138 +1,148 @@
-import { eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Telegraf } from "telegraf";
 import type { BotContext } from "../../types.js";
 import { db } from "../../db/index.js";
-import { loans } from "../../db/schema.js";
-import { getUser } from "../../db/users.js";
+import { loanNotifications, loans } from "../../db/schema.js";
 import { tryTransitionLoanStatus } from "../../db/loans.js";
-import { LoanStatus } from "../../shared/constants.js";
-import { checkEscrowFunding, fetchMempool } from "../../core/bitcoin/index.js";
-import { getBotFeePercent } from "../../config/fees.js";
-import { getLoanParties } from "../../utils/parties.js";
-import { getUserDict } from "../../locales/index.js";
+import { LoanStatus, LTV_LIQUIDATION_THRESHOLD } from "../../shared/constants.js";
+import { getRateInfoFor } from "../../utils/price.js";
 import { safeNotify } from "../../utils/telegram.js";
-import { escapeMarkdown } from "../../utils/format.js";
+import { getLoanParties } from "../../utils/parties.js";
+import { getAccruedInterest } from "../../db/contracts.js";
+import { checkEscrowFunding } from "../../core/bitcoin/transactions.js";
 
-const notifiedPartialLoan = new Set<string>();
+const LTV_WARNING_THRESHOLD = 75;
+const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000; // 1 día de gracia para pagar
 
-export function startLoanEscrowMonitor(bot: Telegraf<BotContext>) {
-  setInterval(async () => {
-    const pendingLoans = await db
-      .select()
-      .from(loans)
-      .where(
-        or(
-          eq(loans.status, LoanStatus.WaitingCollateral),
-          eq(loans.status, LoanStatus.CollateralUnconfirmed),
-        ),
-      );
+let isCheckingLoans = false;
 
-    if (pendingLoans.length === 0) return;
+export function startLoansMonitor(bot: Telegraf<BotContext>) {
+  setInterval(
+    async () => {
+      if (isCheckingLoans) return;
+      isCheckingLoans = true;
 
-    let currentHeight = 0;
-    try {
-      const tipRes = await fetchMempool("blocks/tip/height");
-      if (tipRes.ok) currentHeight = parseInt(await tipRes.text(), 10);
-    } catch (e) {
-      return; 
-    }
+      try {
+        const activeLoans = await db
+          .select()
+          .from(loans)
+          .where(eq(loans.status, LoanStatus.Active));
 
-    for (const loan of pendingLoans) {
-      await new Promise((res) => setTimeout(res, 500)); 
-      if (!loan.escrowAddress) continue;
+        if (activeLoans.length === 0) return;
 
-      const fundingInfo = await checkEscrowFunding(loan.escrowAddress, currentHeight);
-      if (!fundingInfo) continue;
+        const now = Date.now();
 
-      const baseSats = loan.collateralSats;
-      const botFeePercent = getBotFeePercent(baseSats);
-      const borrowerFeeSats = Math.floor(baseSats * (botFeePercent / 100));
-      const expectedSats = baseSats + borrowerFeeSats; 
+        for (const loan of activeLoans) {
+          if (
+            !loan.loanStartAt ||
+            !loan.durationMonthsLocked ||
+            !loan.fiatAmountLocked
+          )
+            continue;
+          const { borrowerId, lenderId } = getLoanParties(loan);
 
-      const { lenderId, borrowerId } = getLoanParties(loan);
-      const lender = await getUser(lenderId!);
-      const borrower = await getUser(borrowerId!);
-      const dictLender = getUserDict(lender?.language);
-      const dictBorrower = getUserDict(borrower?.language);
+          const durationMs =
+            loan.durationMonthsLocked * 30 * 24 * 60 * 60 * 1000;
+          const dueDate = loan.loanStartAt + durationMs;
+          const expirationWithGrace = dueDate + GRACE_PERIOD_MS;
 
-      if (fundingInfo.totalFundedSats < expectedSats) {
-        
-        if (loan.status === LoanStatus.CollateralUnconfirmed) {
-          if (fundingInfo.totalFundedSats === 0) {
-            const didCancel = await tryTransitionLoanStatus(loan.id, [LoanStatus.CollateralUnconfirmed], LoanStatus.Cancelled);
-            if (didCancel) {
-              await bot.telegram.sendMessage(borrowerId!, dictBorrower.orderCancelledTransactionDisappeared, { parse_mode: "Markdown" });
-              await bot.telegram.sendMessage(lenderId!, dictLender.orderCancelledSellerDepositReverted, { parse_mode: "Markdown" });
-            }
-          } else {
-            const didTransition = await tryTransitionLoanStatus(loan.id, [LoanStatus.CollateralUnconfirmed], LoanStatus.Refundable);
+          if (now >= expirationWithGrace) {
+            const didTransition = await tryTransitionLoanStatus(
+              loan.id,
+              [LoanStatus.Active],
+              LoanStatus.Expired,
+            );
             if (didTransition) {
-              await bot.telegram.sendMessage(borrowerId!, dictBorrower.tamperingDetected, { parse_mode: "Markdown" });
-              await bot.telegram.sendMessage(lenderId!, dictLender.orderCancelledDepositAltered, { parse_mode: "Markdown" });
+              await safeNotify(bot, borrowerId!, (dict) =>
+                dict.loanExpiredBorrower(loan.id),
+              );
+              await safeNotify(bot, lenderId!, (dict) =>
+                dict.loanExpiredLender(loan.id),
+              );
+              continue;
             }
           }
-          continue;
-        }
 
-        if (fundingInfo.utxoCount >= 2) {
-          notifiedPartialLoan.delete(loan.id);
-          const didTransition = await tryTransitionLoanStatus(loan.id, [LoanStatus.WaitingCollateral, LoanStatus.CollateralUnconfirmed], LoanStatus.Refundable);
-          if (didTransition) {
-            await bot.telegram.sendMessage(
-              borrowerId!,
-              dictBorrower.escrowFundingFailed(fundingInfo.utxoCount, fundingInfo.totalFundedSats, expectedSats, loan.id),
-              { parse_mode: "Markdown" },
+          // LTV
+          try {
+            const principal = loan.fiatAmountLocked;
+            const interest = getAccruedInterest(loan);
+            const remainingDebt =
+              principal + interest - (loan.amountRepaid || 0);
+
+            const rateInfo = await getRateInfoFor(
+              remainingDebt,
+              loan.fiatCode,
+              0,
             );
-            await bot.telegram.sendMessage(lenderId!, dictLender.orderCancelledSellerFunding, { parse_mode: "Markdown" });
-          }
-        } 
-        else if (fundingInfo.utxoCount === 1) {
-          if (!notifiedPartialLoan.has(loan.id)) {
-            notifiedPartialLoan.add(loan.id);
-            const remainingSats = expectedSats - fundingInfo.totalFundedSats;
-            await bot.telegram.sendMessage(
-              borrowerId!,
-              dictBorrower.incompleteFunding(fundingInfo.totalFundedSats, expectedSats, remainingSats),
-              { parse_mode: "Markdown" },
+            const currentRequiredSatsForPrincipal = rateInfo.satsAmount;
+
+            const currentLTV =
+              (currentRequiredSatsForPrincipal / loan.collateralSats) * 100;
+            console.log(currentLTV)
+            if (currentLTV >= LTV_LIQUIDATION_THRESHOLD) {
+              // Volver a revisar el escrow, por si se agregó colateral (solo se toma en cuenta lo confirmado 2 veces)
+              let fundingInfo = await checkEscrowFunding(loan.escrowAddress!);
+              if (fundingInfo!.totalFundedSats !== loan.collateralSats) {
+                await db
+                  .update(loans)
+                  .set({ collateralSats: fundingInfo?.totalFundedSats })
+                  .where(eq(loans.id, loan.id));
+                
+                let newLTV = (currentRequiredSatsForPrincipal / fundingInfo!.totalFundedSats) * 100;
+                if (newLTV < LTV_LIQUIDATION_THRESHOLD) continue;
+              }
+              const didTransition = await tryTransitionLoanStatus(
+                loan.id,
+                [LoanStatus.Active],
+                LoanStatus.Liquidatable,
+              );
+
+              if (didTransition) {
+                await safeNotify(bot, borrowerId!, (dict) =>
+                  dict.ltvLiquidatedBorrower(loan.id),
+                );
+                await safeNotify(bot, lenderId!, (dict) =>
+                  dict.ltvLiquidatedLender(loan.id),
+                );
+              }
+              continue;
+            }
+
+            // Alerta preventiva al 75%
+            if (currentLTV >= LTV_WARNING_THRESHOLD) {
+              const [notificationRecord] = await db
+                .select()
+                .from(loanNotifications)
+                .where(eq(loanNotifications.loanId, loan.id))
+                .limit(1);
+
+              const warningAlreadySent =
+                notificationRecord?.ltvWarningSent === 1;
+              if (!warningAlreadySent) {
+                await safeNotify(bot, borrowerId!, (dict) =>
+                  dict.ltvWarning(currentLTV, LTV_LIQUIDATION_THRESHOLD),
+                );
+
+                await db
+                  .insert(loanNotifications)
+                  .values({ loanId: loan.id, ltvWarningSent: 1 })
+                  .onDuplicateKeyUpdate({ set: { ltvWarningSent: 1 } });
+              }
+            }
+          } catch (priceError) {
+            console.error(
+              `Error obteniendo precio para LTV del préstamo ${loan.id}:`,
+              priceError,
             );
           }
         }
-        continue;
+      } catch (err) {
+        console.error("Error en monitor de préstamos:", err);
+      } finally {
+        isCheckingLoans = false;
       }
-
-      // Casos de fondeo completo o sobre-colaterizado
-      notifiedPartialLoan.delete(loan.id);
-
-      if (loan.status === LoanStatus.WaitingCollateral && !fundingInfo.confirmed) {
-        const didTransition = await tryTransitionLoanStatus(loan.id, [LoanStatus.WaitingCollateral], LoanStatus.CollateralUnconfirmed);
-        if (didTransition) {
-          await bot.telegram.sendMessage(borrowerId!, dictBorrower.escrowUnconfirmed(loan.escrowAddress), { parse_mode: "Markdown" });
-          await bot.telegram.sendMessage(lenderId!, dictLender.escrowUnconfirmed(loan.escrowAddress), { parse_mode: "Markdown" });
-        }
-      }
-
-      if (fundingInfo.confirmed && loan.status !== LoanStatus.WaitingDisbursement) {
-        
-        const actualCollateralDeposited = fundingInfo.totalFundedSats - borrowerFeeSats;
-
-        const didTransition = await tryTransitionLoanStatus(
-          loan.id,
-          [LoanStatus.WaitingCollateral, LoanStatus.CollateralUnconfirmed],
-          LoanStatus.WaitingDisbursement,
-          { 
-            loanStartAt: Date.now(),
-            collateralSats: actualCollateralDeposited
-          }
-        );
-
-        if (!didTransition) continue;
-
-        const borrowerContact = "@" + escapeMarkdown(borrower!.username);
-        const lenderContact = "@" + escapeMarkdown(lender!.username);
-
-        await safeNotify(bot, borrowerId!, (dict) => dict.loanCollateralSecuredBorrower(lenderContact, loan.id));
-        await safeNotify(bot, lenderId!, (dict) => dict.loanCollateralSecuredLender(borrowerContact, loan.fiatAmountLocked!, loan.fiatCode, loan.id));
-      }
-    }
-  }, 60000); 
+    },
+    0.3 * 60 * 1000,
+  ); // Ejecutar cada 5 minutos
 }

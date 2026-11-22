@@ -10,11 +10,21 @@ const MEMPOOL_URLS_TESTNET = [
   process.env.MEMPOOL_API_BASE_URL || 'https://mempool.space/testnet4/api'
 ];
 
-export const network = process.env.NETWORK === 'testnet'
-  ? bitcoin.networks.testnet
-  : bitcoin.networks.bitcoin;
+const NETWORK_NAME = process.env.NETWORK;
 
-const baseUrls = process.env.NETWORK === 'testnet' ? MEMPOOL_URLS_TESTNET : MEMPOOL_URLS_MAINNET;
+if (NETWORK_NAME !== 'mainnet' && NETWORK_NAME !== 'testnet4') {
+  throw new Error(
+    `NETWORK inválido: "${NETWORK_NAME ?? ''}". Valores permitidos: "mainnet" o "testnet4".`,
+  );
+}
+
+export const isMainnet = NETWORK_NAME === 'mainnet';
+
+export const network = isMainnet
+  ? bitcoin.networks.bitcoin
+  : bitcoin.networks.testnet;
+
+const baseUrls = isMainnet ? MEMPOOL_URLS_MAINNET : MEMPOOL_URLS_TESTNET;
 
 export const mempoolBaseURL = baseUrls[0]!.replace(/\/api$/, "");
 

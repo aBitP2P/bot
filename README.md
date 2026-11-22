@@ -98,7 +98,7 @@ ADMIN_IDS="12345678,87654321"
 # de cada escrow, por lo que debe resguardarse de forma segura y nunca
 # cambiarse mientras existan órdenes activas.
 BOT_MNEMONIC="palabra1 palabra2 ... palabra12"
-NETWORK="bitcoin" # 'testnet' o 'bitcoin'
+NETWORK="mainnet" # 'mainnet' o 'testnet4'
 
 # Confirmaciones on-chain necesarias para dar por fondeado un escrow (recomendado: 2)
 REQUIRED_CONFIRMATIONS=2

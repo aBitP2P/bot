@@ -66,7 +66,7 @@ function getWizardPreviewText(
 export async function startOrderWizard(ctx: CommandContext, type: OrderType) {
   const userId = ctx.from.id;
   if (!userId) return;
-  if (!ctx.user.encryptedWif)
+  if (!ctx.user.encryptedMnemonic)
     return ctx.reply(ctx.dict.setYourPersonalPassword);
   let orderList = await getOrdersCreatedBy(userId);
   if (orderList.length >= 6) return await ctx.reply(ctx.dict.maxOrdersReached);

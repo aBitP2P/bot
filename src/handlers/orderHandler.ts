@@ -171,7 +171,7 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
   if (!takerId) return;
   const user = ctx.user;
   const dict = ctx.dict;
-  if (!user?.pubkey) {
+  if (!user?.xpub) {
     await ctx.telegram.sendMessage(takerId, dict.setYourPersonalPassword, {
       parse_mode: "Markdown",
     });

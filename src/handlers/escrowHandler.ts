@@ -5,7 +5,7 @@ import { orders } from "../db/schema.js";
 import { getUser } from "../db/users.js";
 import { getUserDict } from "../locales/index.js";
 import type { BotContext } from "../types.js";
-import { generateEscrow } from "../core/bitcoin/index.js";
+import { generateEscrow, getNextDerivationIndex, getPairCounterKey } from "../core/bitcoin/index.js";
 import QRCode from "qrcode";
 import { getParties } from "../utils/order.js";
 import { getBotFeePercent } from "../config/fees.js";
@@ -19,17 +19,20 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
   const buyer = await getUser(buyerId!);
   const seller = await getUser(sellerId!);
   const dictSeller = getUserDict(seller?.language);
-  const buyerPubkey = buyer?.pubkey;
-  const sellerPubkey = seller?.pubkey;
+  const buyerXpub = buyer?.xpub;
+  const sellerXpub = seller?.xpub;
 
-  if (!buyerPubkey || !sellerPubkey) {
+  if (!buyerXpub || !sellerXpub) {
     return ctx.reply(dictSeller.missingPubkeys);
   }
 
+  const pairKey = getPairCounterKey(buyerXpub, sellerXpub);
+  const escrowIndex = await getNextDerivationIndex(pairKey);
+
   const { address, witnessScript } = generateEscrow(
-    buyerPubkey,
-    sellerPubkey,
-    order.id,
+    buyerXpub,
+    sellerXpub,
+    escrowIndex,
   );
 
   const baseSats = order.amountSats;
@@ -52,10 +55,11 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
   await db
     .update(orders)
     .set({
-      buyerPubkey,
-      sellerPubkey,
+      buyerXpub: buyer.xpub,
+      sellerXpub: seller.xpub,
+      escrowIndex,
       escrowAddress: address,
-      witnessScript: witnessScript,
+      witnessScript,
     })
     .where(eq(orders.id, orderId));
 

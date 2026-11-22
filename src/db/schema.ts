@@ -13,8 +13,10 @@ export const users = mysqlTable("users", {
 
   customFee: double("custom_fee"), 
   
-  pubkey: text("pubkey"),
-  encryptedWif: text("encrypted_wif"),
+  xpub: text("xpub"),
+  fingerprint: text("fingerprint"),
+  encryptedMnemonic: text("encrypted_mnemonic"),
+
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
 });
 
@@ -39,8 +41,9 @@ export const orders = mysqlTable("orders", {
   disputeAdminId: bigint("dispute_admin_id", { mode: "number" }),
   disputeResolution: varchar("dispute_resolution", { length: 32 }),
 
-  buyerPubkey: text("buyer_pubkey"),
-  sellerPubkey: text("seller_pubkey"),
+  buyerXpub: text("buyer_xpub"),
+  sellerXpub: text("seller_xpub"),
+  escrowIndex: int("escrow_index").default(0),
 
   amountSats: bigint("amount_sats", { mode: "number" }).notNull().default(0),
   escrowAddress: varchar("escrow_address", { length: 255 }),
@@ -56,7 +59,7 @@ export const orders = mysqlTable("orders", {
 ]);
 
 export const counters = mysqlTable('counters', {
-  name: varchar('name', { length: 64 }).primaryKey(),
+  name: varchar('name', { length: 255 }).primaryKey(),
   value: int('value').notNull().default(0),
 });
 

@@ -1,6 +1,6 @@
-import { getOrder } from "../db/orders.js";
+import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
 import type { BotContext, CallbackContext, CommandContext, OrderRecord } from "../types.js";
-import { getLiveMinerFee, checkEscrowFunding, DUST_LIMIT } from "../core/bitcoin/index.js";
+import { getLiveMinerFee, checkEscrowFunding, DUST_LIMIT, findSpendingTxid } from "../core/bitcoin/index.js";
 import { orders } from "../db/schema.js";
 import { db } from "../db/index.js";
 import { and, eq, or } from "drizzle-orm";
@@ -9,6 +9,7 @@ import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { getParties } from "../utils/order.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
 import { getBotFeePercent } from "../config/fees.js";
+import { Markup } from "telegraf";
 
 export async function claimCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -99,6 +100,21 @@ export async function startClaimPasswordFlow(
   let outputCount = 1;
   let totalFundedSats = baseSats;
 
+  if (order.escrowAddress) {
+    const spentTxid = await findSpendingTxid(order.escrowAddress);
+    if (spentTxid) {
+      await tryTransitionOrderStatus(
+        order.id,
+        [OrderStatus.Releasable, OrderStatus.Refundable],
+        isRefund ? OrderStatus.ExternallyRefunded : OrderStatus.ExternallyCompleted,
+        { payoutTxid: spentTxid },
+      );
+      return ctx.reply(dict.orderExternallySigned(order.id, spentTxid), {
+        parse_mode: "Markdown",
+      });
+    }
+  }
+
   if (!isRefund) {
     const funding = await checkEscrowFunding(order.escrowAddress!);
     totalFundedSats = funding?.totalFundedSats ?? baseSats;
@@ -127,11 +143,14 @@ export async function startClaimPasswordFlow(
     finalAmount = baseSats - buyerFeeSats - minerFeeSats;
   }
 
-  ctx.session.step = "CLAIM_PASSWORD";
-  ctx.session.claimOrderId = order.id;
-
   await ctx.reply(
-    dict.askClaimPassword(minerFeeSats, finalAmount, receivingAddress, feeRate),
-    { parse_mode: "Markdown" },
-  );
+  dict.showClaimPreview(minerFeeSats, finalAmount, receivingAddress, feeRate),
+  {
+    parse_mode: "Markdown",
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback(dict.btnSignWithPassword, `claim_pass_${order.id}`)],
+      [Markup.button.callback(dict.btnSignExternally, `claim_ext_${order.id}`)],
+    ]),
+  },
+);
 }

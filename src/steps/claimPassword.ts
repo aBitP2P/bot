@@ -36,9 +36,9 @@ export async function claimPasswordStep(ctx: CommandContext) {
   if (isRefund && userId !== sellerId) return ctx.reply(ctx.dict.onlySeller);
   if (!isRefund && userId !== buyerId) return ctx.reply(ctx.dict.onlyBuyer);
 
-  let signerWif: string;
+  let signerMnemonic: string;
   try {
-    signerWif = decryptData(ctx.user.encryptedWif!, password);
+    signerMnemonic = decryptData(ctx.user.encryptedMnemonic!, password);
   } catch (error) {
     return ctx.reply(ctx.dict.invalidPassword(`/claim ${orderId}`), {
       parse_mode: "Markdown",
@@ -55,8 +55,8 @@ export async function claimPasswordStep(ctx: CommandContext) {
     let txid = "";
     try {
       txid = isRefund
-      ? await broadcastRefundTx(order, signerWif, ctx.user.customFee)
-      : await broadcastReleaseTx(order, signerWif, ctx.user.customFee);
+      ? await broadcastRefundTx(order, { mnemonic: signerMnemonic }, ctx.user.customFee)
+      : await broadcastReleaseTx(order, { mnemonic: signerMnemonic }, ctx.user.customFee);
     } catch (error: any) {
       throw error;
     }

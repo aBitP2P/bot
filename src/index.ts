@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Telegraf, session } from "telegraf";
+import { Markup, Telegraf, session } from "telegraf";
 import { type BotContext, type SessionData } from "./types.js";
 import {
   startOrderWizard,
@@ -22,7 +22,13 @@ import { message } from "telegraf/filters";
 import { orders, users } from "./db/schema.js";
 import { db } from "./db/index.js";
 import { eq } from "drizzle-orm";
-import { isValidAddress } from "./core/bitcoin/index.js";
+import {
+  buildRefundPsbt,
+  buildReleasePsbt,
+  findSpendingTxid,
+  getLiveMinerFee,
+  isValidAddress,
+} from "./core/bitcoin/index.js";
 import { initializeEscrow } from "./handlers/escrowHandler.js";
 import {
   startEscrowMonitor,
@@ -57,6 +63,7 @@ import { markAsFiatSent } from "./commands/fiatsent.js";
 import { askReleaseConfirmation, doFundsRelease } from "./commands/release.js";
 import { initiateClaim } from "./commands/claim.js";
 import { safeRemoveMarkup } from "./utils/telegram.js";
+import { backupCommand, handleOrderBackup } from "./commands/backup.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -78,7 +85,7 @@ bot.command("buy", (ctx) => startOrderWizard(ctx, "BUY"));
 bot.command("sell", (ctx) => startOrderWizard(ctx, "SELL"));
 bot.command("exit", (ctx) => cancelWizard(ctx));
 bot.command("setpass", async (ctx) => {
-  if (ctx.user.pubkey !== null) return ctx.reply(ctx.dict.passwordAlreadySet);
+  if (ctx.user.xpub !== null) return ctx.reply(ctx.dict.passwordAlreadySet);
   ctx.session.step = "SET_PASS";
   await ctx.reply(ctx.dict.promptPassword, { parse_mode: "Markdown" });
 });
@@ -95,6 +102,166 @@ bot.command("help", helpCommand);
 bot.command("setlang", setlangCommand);
 bot.command("fees", feesCommand);
 bot.command("setfee", setFeeCommand);
+bot.command("backup", backupCommand);
+
+bot.action(/^claim_pass_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const orderId = ctx.match[1];
+  const order = await getOrder(orderId!);
+  await safeRemoveMarkup(ctx);
+  if (!order) return await ctx.reply(ctx.dict.orderNotFound);
+
+  ctx.session.step = "CLAIM_PASSWORD";
+  ctx.session.claimOrderId = orderId;
+
+  await ctx.reply(ctx.dict.typePassword);
+});
+
+bot.action(/^claim_ext_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const orderId = ctx.match[1];
+  if (!orderId) return;
+
+  const order = await getOrder(orderId);
+  if (!order) return await ctx.reply(ctx.dict.orderNotFound);
+
+  const userId = ctx.from.id;
+  const buyerId = order.type === "BUY" ? order.creatorId : order.takerId;
+  const sellerId = order.type === "SELL" ? order.creatorId : order.takerId;
+
+  const isBuyerClaim =
+    buyerId === userId && order.status === OrderStatus.Releasable;
+  const isSellerRefund =
+    sellerId === userId && order.status === OrderStatus.Refundable;
+
+  if (!isBuyerClaim && !isSellerRefund) {
+    return await ctx.reply(ctx.dict.invalidOrderStatus);
+  }
+
+  try {
+    await ctx.editMessageReplyMarkup(undefined).catch(() => {});
+
+    const user = await getUser(userId);
+    const { feeRate } = await getLiveMinerFee({
+      escrowAddress: order.escrowAddress,
+      customFeeRate: user?.customFee || null,
+    });
+
+    const { psbt, escrowBotKeypair } = isBuyerClaim
+      ? await buildReleasePsbt(order, feeRate)
+      : await buildRefundPsbt(order, feeRate);
+
+    psbt.signAllInputs(escrowBotKeypair);
+
+    const psbtBuffer = Buffer.from(psbt.toBuffer());
+    const claimType = isBuyerClaim ? "claim" : "refund";
+
+    await ctx.replyWithDocument(
+      {
+        source: psbtBuffer,
+        filename: `abitp2p-${claimType}-${order.id}.psbt`,
+      },
+      {
+        caption: ctx.dict.externalSignInstructions,
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              ctx.dict.btnConfirmExternalBroadcast,
+              `confirm_broadcast_${order.id}`,
+            ),
+          ],
+        ]),
+      },
+    );
+  } catch (err) {
+    console.error("Error generando PSBT externo:", err);
+    await ctx.reply(
+      ctx.dict.errorProcessingTx(
+        err instanceof Error ? err.message : String(err),
+      ),
+      { parse_mode: "Markdown" },
+    );
+  }
+});
+
+bot.action(/^confirm_broadcast_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const orderId = ctx.match[1];
+  if (!orderId) return;
+
+  const order = await getOrder(orderId);
+  if (!order) return await ctx.reply(ctx.dict.orderNotFound);
+
+  const userId = ctx.from.id;
+  const buyerId = order.type === "BUY" ? order.creatorId : order.takerId;
+  const sellerId = order.type === "SELL" ? order.creatorId : order.takerId;
+
+  if (userId !== buyerId && userId !== sellerId) {
+    return await ctx.reply(ctx.dict.unauthorizedAccess);
+  }
+
+  if (
+    order.status === OrderStatus.Completed ||
+    order.status === OrderStatus.Refunded
+  ) {
+    await safeRemoveMarkup(ctx);
+    return await ctx.reply(
+      ctx.dict.orderExternallySigned(order.id, order.payoutTxid),
+      { parse_mode: "Markdown" },
+    );
+  }
+
+  if (
+    order.status !== OrderStatus.Releasable &&
+    order.status !== OrderStatus.Refundable
+  ) {
+    return await ctx.reply(ctx.dict.invalidOrderStatus);
+  }
+
+  if (!order.escrowAddress) {
+    return await ctx.reply(ctx.dict.invalidOrderStatus);
+  }
+
+  const spentTxid = await findSpendingTxid(order.escrowAddress);
+  if (!spentTxid) {
+    return await ctx.reply(ctx.dict.externalBroadcastNotDetected, {
+      parse_mode: "Markdown",
+    });
+  }
+
+  const isRefund = order.status === OrderStatus.Refundable;
+  const targetStatus = isRefund
+    ? OrderStatus.ExternallyRefunded
+    : OrderStatus.ExternallyCompleted;
+
+  const didTransition = await tryTransitionOrderStatus(
+    order.id,
+    [OrderStatus.Releasable, OrderStatus.Refundable],
+    targetStatus,
+    {
+      payoutTxid: spentTxid,
+    },
+  );
+
+  if (didTransition) {
+    await safeRemoveMarkup(ctx);
+
+    if (isRefund && buyerId) {
+      const buyer = await getUser(buyerId);
+      const buyerDict = getUserDict(buyer?.language);
+      await ctx.telegram.sendMessage(
+        buyerId,
+        buyerDict.refundCompletedNotification(order.id),
+        { parse_mode: "Markdown" },
+      );
+    }
+  }
+
+  return await ctx.reply(ctx.dict.orderExternallySigned(order.id, spentTxid), {
+    parse_mode: "Markdown",
+  });
+});
 
 bot.on("callback_query", async (ctx, next) => {
   const query = ctx.callbackQuery as { data?: string };
@@ -132,6 +299,12 @@ bot.on("callback_query", async (ctx, next) => {
     const orderId = data.replace("cancelCommand_", "");
     await safeRemoveMarkup(ctx);
     return handleOrderCancelFromCommand(ctx, orderId);
+  }
+
+  if (data.startsWith("backupCommand")) {
+    const orderId = data.replace("backupCommand_", "");
+    await safeRemoveMarkup(ctx);
+    return handleOrderBackup(ctx, orderId);
   }
 
   if (data.startsWith("fiatsentCommand_")) {

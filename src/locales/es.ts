@@ -3,10 +3,10 @@ import {
   Strings,
   OrderStatusLabelsES,
   getFiatEmoji,
+  formatConfirmations,
 } from "../shared/constants.js";
 import { mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
 import { MIN_SATS } from "../utils/price.js";
-
 type OrderRow = typeof orders.$inferSelect;
 
 export default {
@@ -29,6 +29,7 @@ export default {
     `/setlang — Cambia de idioma\n` +
     "/fees - Revisa como están las comisiones para tus órdenes \n" +
     "/setfee - Establece la comisión de red que se usará\n" +
+    `/backup — Respalda el descriptor de tus escrows\n` +
     `/exit — Cancelar la acción actual\n\n` +
     `📢 Canal: ${Strings.OrderChannelTag}\n` +
     `💬 Grupo: ${Strings.GeneralChatTag}`,
@@ -53,16 +54,20 @@ export default {
   setYourPersonalPassword:
     "❌ Primero debes de establecer tu contraseña con /setpass para poder tomar o crear órdenes.",
   promptPassword:
-    `*⚠️ Se generará una llave privada ligada a tu usuario, la contraseña SERÁ NECESARIA para reclamar las órdenes.*\n` +
-    `*NO SE PUEDE CAMBIAR, asegúrate de escribirla correctamente y anotarla en algún lugar.*\n\n` +
+    `*⚠️ Se generará unas 12 palabras ligadas a tu usuario, la contraseña SERÁ NECESARIA para reclamar las órdenes.*\n` +
+    `*Asegúrate de que la contraseña sea segura* y guardala en un lugar seguro.\n\n` +
     "🔑 *Por favor, escribe tu contraseña para configurar tu usuario:*",
   confirmPassword: "👉 Para confirmar, vuelve a escribir la contraseña: ",
   passwordsDoNotMatch:
     "❌ Las contraseñas no coinciden. Inténtalo de nuevo con /setpass",
   passwordAlreadySet: "❌ Ya tienes una contraseña establecida previamente.",
-  passwordSetSuccess:
-    `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.\n\n` +
-    "_Ten en cuenta que solo es para uso del bot. Los fondos que compres, se enviarán a cualquier dirección que desees al momento, el bot no custodia en ningún momento los fondos de manera directa._",
+  passwordSetSuccess: `✅ *Contraseña configurada con éxito.* Perfil encriptado y listo para usar.`,
+  pleaseSaveMnemonic: (mnemonic: string) =>
+    "A continuación se muestran tus 12 palabras 👇 ```\n" +
+    mnemonic +
+    "```" +
+    "\n\n" +
+    "⚠️ Borra este mensaje una vez hayas guardado tus 12 palabras de forma segura. *Ten en cuenta que solo servirá para firmar transacciones, NO deberías de guardar esta billetera para guardar fondos.*",
   invalidLanguage: "❌ Idioma inválido.",
   selectLanguage: "👇 Selecciona tu idioma preferido",
   languageUpdateSuccess: "✅ Idioma actualizado correctamente.",
@@ -256,12 +261,13 @@ export default {
   askSellerEscrow: (sats: number, address: string) =>
     `⚡ *Fondeo de escrow Requerido*\n\n` +
     `Por favor, envía \`${sats / 100_000_000}\` BTC a la siguiente dirección on-chain:\n\n` +
-    `\`${address}\`\n\n` +
-    `_Una vez se confirme la transacción (2 confirmaciones), los pondremos en contacto. Por favor, asegurate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
+    `\`${address}\`\n` +
+    `Te recomendamos respaldar los datos de este escrow ahora por si los llegas a necesitar. (/backup)\n\n` +
+    `_Una vez se confirme la transacción (${formatConfirmations("es")}), los pondremos en contacto. Por favor, asegurate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
   escrowUnconfirmed: (escrowAddress: string) =>
     `⏳ *Transacción detectada en la red.*\n\n` +
     `[Ver en el explorador](${mempoolBaseURL}/address/${escrowAddress}) \n` +
-    `_Esperando 2 confirmaciones para poder proceder seguramente con la orden..._`,
+    `_Esperando ${formatConfirmations("es")} para poder proceder seguramente con la orden..._`,
   escrowFundingFailed: (
     utxoCount: number,
     totalFundedSats: number,
@@ -379,12 +385,36 @@ export default {
   ratingDone: (stars: number) =>
     `⭐ Has calificado a tu contraparte con ${stars} estrellas.`,
 
+  // --------------------------- Backup -----------------------------------
+  noBackupOrdersFound:
+    "📭 No tienes órdenes activas con un escrow generado para respaldar.",
+  selectOrderForBackup:
+    "🔐 Selecciona la orden de la cual deseas obtener el respaldo del escrow:",
+  orderBackup: (data: {
+    orderId: string;
+    escrowAddress: string;
+    descriptor: string;
+    escrowIndex: number;
+    userXpub: string;
+    userFingerprint: string;
+  }) =>
+    `🔐 *Respaldo de Escrow — Orden* \`${data.orderId}\`\n\n` +
+    `📍 *Dirección Escrow:*\n\`${data.escrowAddress}\`\n\n` +
+    `🔢 *Índice de derivación:* \`/0/${data.escrowIndex}\`\n\n` +
+    `🔑 *Tu xpub:*\n\`${data.userXpub}\`\n\n` +
+    `🆔 *Tu fingerprint:* \`${data.userFingerprint}\`\n\n` +
+    `🧬 *Output Descriptor:*\n` +
+    "```\n" +
+    `${data.descriptor}\n` +
+    "```\n\n" +
+    `⚠️ *Nota:* Guarda este respaldo junto con tus 12 palabras. Con ambos podrás importar la bóveda multifirma y firmar desde una billetera externa si fuera necesario, o si así deseas hacerlo.`,
+
   // ─────────────────────────── Claim & Refund ───────────────────────────
   selectClaimableOrder:
     "👇 Selecciona la orden de la cual deseas reclamar los fondos:",
   noClaimableOrdersFound:
     "📭 No tienes órdenes listas para retirar o reembolsar.",
-  askClaimPassword: (
+  showClaimPreview: (
     minerFee: number,
     finalAmount: number,
     receivingAddress: string,
@@ -395,8 +425,26 @@ export default {
     `├ Dirección: \`${receivingAddress}\`\n` +
     `├ Comisión minera (est): \`-${minerFee / 100_000_000} BTC\` (${minerFeeRate} sats/vB)\n` +
     `└ **Recibirás aprox:** \`${finalAmount / 100_000_000} BTC\`\n\n` +
-    `💡 *Nota:* Si no estás de acuerdo con la comisión minera, puedes enviar /exit para cancelar y usar /setfee para establecer tu propia tarifa.\n\n` +
-    `Por favor, **escribe tu contraseña** para firmar criptográficamente el retiro hacia tu billetera:`,
+    `💡 *Nota:* Si no estás de acuerdo con la comisión minera, puedes usar /setfee para establecer tu propia tarifa y volver a usar /claim.\n\n` +
+    `Escoge de qué forma quieres firmar esta transacción 👇`,
+  btnSignWithPassword: "🔑 Escribir contraseña",
+  btnSignExternally: "✍️ Firmar externamente",
+  typePassword: "Escribe tu contraseña:",
+  externalSignInstructions:
+    `✍️ *Firma Externa (PSBT)*\n\n` +
+    `La transacción ya cuenta con la firma del bot. Sigue estos pasos para completarla:\n\n` +
+    `1. Importa las 12 palabras que se generaron cuando creaste tu contraseña en una billetera compatible con PSBT (como Sparrow Wallet o BlueWallet).\n` +
+    `2. Importa el descriptor del escrow multifirma 2-de-3 usando /backup *(solo si tu billetera te lo solicita para reconocer los fondos)*.\n` +
+    `3. Carga el archivo \`.psbt\` adjunto, firma la transacción, transmítela a la red (broadcast) y presiona el botón de abajo para confirmar.`,
+  btnConfirmExternalBroadcast: "✅ Ya transmití la transacción",
+  orderExternallySigned: (orderId: string, txid?: string | null) =>
+    `✍️ *Firma externa detectada*\n\n` +
+    `Los fondos de la orden \`${orderId}\` ya fueron retirados mediante una transacción externa.` +
+    (txid
+      ? `\n\n🔎 [Ver TX en el explorador](${mempoolBaseURL}/tx/${txid})`
+      : ""),
+  externalBroadcastNotDetected:
+    "⏳ Aún no detectamos la salida de los fondos en la red. Asegúrate de haber transmitido (broadcast) la transacción firmada e inténtalo de nuevo en unos segundos.",
   psbtSigningLoading: `⏳ *Co-firmando y transmitiendo a la red...*`,
   claimSuccess: (txid: string) =>
     `🎉 *¡Retiro Exitoso!*\n\nLos fondos van camino a tu billetera.\n🔎 [Ver TX](${mempoolBaseURL}/tx/${txid})`,
@@ -410,7 +458,7 @@ export default {
   selectOrderToCancel:
     "👉 Selecciona la orden que quieres cancelar, puedes ver los detalles con /listorders",
   cancelNotAllowed: `❌ No puedes cancelar la orden en este estado. Si el pago ya fue enviado, deberás abrir una disputa.`,
-  cancelUnconfirmed: `⏳ La orden tiene una transacción sin confirmar en la red. Debes esperar 2 confirmaciones antes de iniciar una cancelación.`,
+  cancelUnconfirmed: `⏳ La orden tiene una transacción sin confirmar en la red. Debes esperar ${formatConfirmations("es")} antes de iniciar una cancelación.`,
   cancelAlreadyRequested: `⏳ Ya solicitaste la cancelación. Esperando a que tu contraparte acepte y firme.`,
   cancelOnlySeller: `❌ Solo el vendedor puede cancelar la orden en este estado.`,
   cancelAddressWait:

@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, notInArray, or, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, notInArray, or, type SQL } from "drizzle-orm";
 import { db } from "./index.js";
 import { orders } from "./schema.js";
 import type { ResultSetHeader } from "mysql2";
@@ -17,15 +17,25 @@ export async function getOrder(orderId: string) {
   return result[0];
 }
 
-export async function getUserOrders(userId: number) {
+export async function getUserOrders(
+  userId: number,
+  options?: { forBackup?: boolean },
+) {
   return await db
     .select()
     .from(orders)
     .where(
       and(
         or(eq(orders.creatorId, userId), eq(orders.takerId, userId)),
-        notInArray(orders.status, [OrderStatus.Completed, OrderStatus.Cancelled, OrderStatus.Refunded]),
-        or(ne(orders.status, OrderStatus.Pending), eq(orders.creatorId, userId)),
+        notInArray(orders.status, [
+          OrderStatus.Completed,
+          OrderStatus.Cancelled,
+          OrderStatus.Refunded,
+          OrderStatus.ExternallyCompleted,
+          OrderStatus.ExternallyRefunded
+        ]),
+        !(options?.forBackup) ? or(ne(orders.status, OrderStatus.Pending), eq(orders.creatorId, userId)) : undefined,
+        options?.forBackup ? isNotNull(orders.escrowAddress) : undefined,
       ),
     );
 }

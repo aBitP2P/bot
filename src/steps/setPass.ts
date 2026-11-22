@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { CommandContext } from "../types.js";
-import { generateWif, getPubkeyFromWif } from "../core/bitcoin/index.js";
+import { generateWallet } from "../core/bitcoin/index.js";
 import { encryptData } from "../utils/crypto.js";
 import { users } from "../db/schema.js";
 import { db } from "../db/index.js";
@@ -24,16 +24,16 @@ export async function setPassStep(ctx: CommandContext) {
     return;
   }
 
-  const wif = generateWif();
-  const pubkey = getPubkeyFromWif(wif);
-  const encryptedWif = encryptData(wif, password);
+  const wallet = generateWallet();
+  const encryptedMnemonic = encryptData(wallet.mnemonic, password);
 
   await db
     .update(users)
-    .set({ encryptedWif, pubkey })
+    .set({ encryptedMnemonic, xpub: wallet.xpub, fingerprint: wallet.fingerprint })
     .where(eq(users.telegramId, userId));
 
   ctx.session.step = "IDLE";
 
-  return ctx.reply(ctx.dict.passwordSetSuccess, { parse_mode: "Markdown" });
+  await ctx.reply(ctx.dict.passwordSetSuccess, { parse_mode: "Markdown" });
+  await ctx.reply(ctx.dict.pleaseSaveMnemonic(wallet.mnemonic), { parse_mode: "Markdown" });
 }

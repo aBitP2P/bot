@@ -57,6 +57,8 @@ export default {
     `*⚠️ A 12-word recovery phrase linked to your account will be generated; your password WILL BE REQUIRED to claim orders.*\n` +
     `*Make sure your password is strong* and keep it in a safe place.\n\n` +
     "🔑 *Please enter your password to set up your account:*",
+  unsafePassword:
+    "⚠️ *Unsafe password.* It must be at least *8 characters* long. Please send a stronger password:",
   confirmPassword: "👉 To confirm, type your password again: ",
   passwordsDoNotMatch: "❌ Passwords don't match. Try again with /setpass",
   passwordAlreadySet: "❌ You already have a previously set password.",
@@ -378,7 +380,7 @@ export default {
     `ℹ️ Your range order has been partially completed. A new order (\`${newOrderId}\`) has been republished for the remaining balance: *${newAmountFiat} ${fiatCode}* in ${Strings.OrderChannelTag}.`,
 
   // --------------------------- Rating -----------------------------------
-  rateCounterpartyMessage: "👉 Por favor, califica a tu contraparte:",
+  rateCounterpartyMessage: "👉 Please rate your counterparty:",
   ratingDone: (stars: number) =>
     `⭐ You have rated your counterpart with ${stars} stars.`,
 
@@ -605,5 +607,5 @@ export default {
   alreadyHaveActiveOrder:
     "❌ You already have an order in progress. You must finish or cancel it before taking another one.",
   invalidCustomFee:
-    "❌ The value must be equal to or greater than 0.8, less than 20, and have up to 2 decimal places.",
+    "❌ The value must be equal to or greater than 1, less than 500, and have up to 2 decimal places.",
 };

@@ -1,6 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import { network, fetchMempool } from "./network.js";
-import { deriveBotEscrowKeypair, deriveUserChildKeypair } from "./wallet.js";
+import { deriveBotEscrowKeypair, deriveUserChildKeypair, getBotMultisigXpub } from "./wallet.js";
 import {
   getLiveMinerFee,
   getNextDerivationIndex,
@@ -66,6 +66,13 @@ async function buildBasePsbt(order: OrderRecord) {
       path: fullPath,
     });
   }
+
+  const botMeta = getBotMultisigXpub();
+  bip32Derivation.push({
+    masterFingerprint: Uint8Array.from(Buffer.from(botMeta.fingerprint, "hex")),
+    pubkey: Uint8Array.from(escrowBotKeypair.publicKey),
+    path: fullPath,
+  });
 
   const psbt = new bitcoin.Psbt({ network });
   const witnessScript = Uint8Array.from(
@@ -164,11 +171,16 @@ export async function buildReleasePsbt(
 
   const botOutput = totalInput - buyerOutput - minerFee;
 
-  psbt.addOutput({ address: order.buyerAddress!, value: BigInt(buyerOutput) });
   if (botOutput >= DUST_LIMIT) {
+    psbt.addOutput({ address: order.buyerAddress!, value: BigInt(buyerOutput) });
     psbt.addOutput({
       address: getBotFeeAddress(await getNextDerivationIndex("fee_derivation_index")),
       value: BigInt(botOutput),
+    });
+  } else {
+    psbt.addOutput({
+      address: order.buyerAddress!,
+      value: BigInt(buyerOutput + Math.max(0, botOutput)),
     });
   }
 

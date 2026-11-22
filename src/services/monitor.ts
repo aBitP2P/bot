@@ -20,198 +20,210 @@ const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const notifiedPartial = new Set<string>();
 let isCheckingTimeouts = false;
+let isCheckingEscrows = false;
 
 export function startEscrowMonitor(bot: Telegraf<BotContext>) {
   setInterval(async () => {
-    const pendingOrders = await db
-      .select()
-      .from(orders)
-      .where(
-        or(
-          eq(orders.status, OrderStatus.WaitingEscrow),
-          eq(orders.status, OrderStatus.Unconfirmed),
-        ),
-      );
+    if (isCheckingEscrows) return;
+    isCheckingEscrows = true;
 
-    if (pendingOrders.length === 0) return;
-
-    let currentHeight = 0;
     try {
-      const tipRes = await fetchMempool("blocks/tip/height");
-      if (tipRes.ok) currentHeight = parseInt(await tipRes.text(), 10);
-    } catch (e) {
-      return;
-    }
+      const pendingOrders = await db
+        .select()
+        .from(orders)
+        .where(
+          or(
+            eq(orders.status, OrderStatus.WaitingEscrow),
+            eq(orders.status, OrderStatus.Unconfirmed),
+          ),
+        );
 
-    for (const order of pendingOrders) {
-      await new Promise((res) => setTimeout(res, 500));
-      if (!order.escrowAddress) continue;
+      if (pendingOrders.length === 0) return;
 
-      const fundingInfo = await checkEscrowFunding(
-        order.escrowAddress,
-        currentHeight,
-      );
-      if (!fundingInfo) continue;
+      let currentHeight = 0;
+      try {
+        const tipRes = await fetchMempool("blocks/tip/height");
+        if (tipRes.ok) currentHeight = parseInt(await tipRes.text(), 10);
+      } catch (e) {
+        return;
+      }
 
-      const botFeePercent = getBotFeePercent(order.amountSats);
-      const sellerFeeSats = Math.floor(
-        order.amountSats * (botFeePercent / 2 / 100),
-      );
-      const expectedSats = order.amountSats + sellerFeeSats;
+      for (const order of pendingOrders) {
+        await new Promise((res) => setTimeout(res, 500));
+        if (!order.escrowAddress) continue;
 
-      const { buyerId, sellerId } = getParties(order);
-      const seller = await getUser(sellerId!);
-      const buyer = await getUser(buyerId!);
+        const fundingInfo = await checkEscrowFunding(
+          order.escrowAddress,
+          currentHeight,
+        );
+        if (!fundingInfo) continue;
 
-      const dictSeller = getUserDict(seller?.language);
-      const dictBuyer = getUserDict(buyer?.language);
+        const botFeePercent = getBotFeePercent(order.amountSats);
+        const sellerFeeSats = Math.floor(
+          order.amountSats * (botFeePercent / 2 / 100),
+        );
+        const expectedSats = order.amountSats + sellerFeeSats;
 
-      if (fundingInfo.totalFundedSats < expectedSats) {
-        if (order.status === OrderStatus.Unconfirmed) {
-          if (fundingInfo.totalFundedSats === 0) {
-            const didCancel = await tryTransitionOrderStatus(
-              order.id,
-              [OrderStatus.Unconfirmed],
-              OrderStatus.Cancelled,
-            );
-            if (didCancel) {
-              await bot.telegram.sendMessage(
-                sellerId!,
-                dictSeller.orderCancelledTransactionDisappeared,
-                { parse_mode: "Markdown" },
+        const { buyerId, sellerId } = getParties(order);
+        const seller = await getUser(sellerId!);
+        const buyer = await getUser(buyerId!);
+
+        const dictSeller = getUserDict(seller?.language);
+        const dictBuyer = getUserDict(buyer?.language);
+
+        if (fundingInfo.totalFundedSats < expectedSats) {
+          if (order.status === OrderStatus.Unconfirmed) {
+            if (fundingInfo.totalFundedSats === 0) {
+              const didCancel = await tryTransitionOrderStatus(
+                order.id,
+                [OrderStatus.Unconfirmed],
+                OrderStatus.Cancelled,
               );
-              await bot.telegram.sendMessage(
-                buyerId!,
-                dictBuyer.orderCancelledSellerDepositReverted,
-                { parse_mode: "Markdown" },
+              if (didCancel) {
+                await bot.telegram.sendMessage(
+                  sellerId!,
+                  dictSeller.orderCancelledTransactionDisappeared,
+                  { parse_mode: "Markdown" },
+                );
+                await bot.telegram.sendMessage(
+                  buyerId!,
+                  dictBuyer.orderCancelledSellerDepositReverted,
+                  { parse_mode: "Markdown" },
+                );
+              }
+            } else {
+              const didTransition = await tryTransitionOrderStatus(
+                order.id,
+                [OrderStatus.Unconfirmed],
+                OrderStatus.Refundable,
               );
+              if (didTransition) {
+                await bot.telegram.sendMessage(
+                  sellerId!,
+                  dictSeller.tamperingDetected,
+                  { parse_mode: "Markdown" },
+                );
+                await bot.telegram.sendMessage(
+                  buyerId!,
+                  dictBuyer.orderCancelledDepositAltered,
+                  { parse_mode: "Markdown" },
+                );
+              }
             }
-          } else {
+            continue;
+          }
+          if (fundingInfo.utxoCount >= 2) {
+            notifiedPartial.delete(order.id);
             const didTransition = await tryTransitionOrderStatus(
               order.id,
-              [OrderStatus.Unconfirmed],
+              [OrderStatus.WaitingEscrow, OrderStatus.Unconfirmed],
               OrderStatus.Refundable,
             );
             if (didTransition) {
               await bot.telegram.sendMessage(
                 sellerId!,
-                dictSeller.tamperingDetected,
+                dictSeller.escrowFundingFailed(
+                  fundingInfo.utxoCount,
+                  fundingInfo.totalFundedSats,
+                  expectedSats,
+                  order.id,
+                ),
                 { parse_mode: "Markdown" },
               );
+
               await bot.telegram.sendMessage(
                 buyerId!,
-                dictBuyer.orderCancelledDepositAltered,
+                dictBuyer.orderCancelledSellerFunding,
+                { parse_mode: "Markdown" },
+              );
+            }
+          } else if (fundingInfo.utxoCount === 1) {
+            if (!notifiedPartial.has(order.id)) {
+              notifiedPartial.add(order.id);
+
+              const remainingSats = expectedSats - fundingInfo.totalFundedSats;
+              await bot.telegram.sendMessage(
+                sellerId!,
+                dictSeller.incompleteFunding(
+                  fundingInfo.totalFundedSats,
+                  expectedSats,
+                  remainingSats,
+                ),
                 { parse_mode: "Markdown" },
               );
             }
           }
           continue;
         }
-        if (fundingInfo.utxoCount >= 2) {
-          notifiedPartial.delete(order.id);
+        notifiedPartial.delete(order.id);
+        if (
+          order.status === OrderStatus.WaitingEscrow &&
+          !fundingInfo.confirmed
+        ) {
+          const didMarkUnconfirmed = await tryTransitionOrderStatus(
+            order.id,
+            [OrderStatus.WaitingEscrow],
+            OrderStatus.Unconfirmed,
+          );
+          if (didMarkUnconfirmed) {
+            await bot.telegram.sendMessage(
+              sellerId!,
+              dictSeller.escrowUnconfirmed(order.escrowAddress),
+              { parse_mode: "Markdown" },
+            );
+            await bot.telegram.sendMessage(
+              buyer!.telegramId,
+              dictBuyer.escrowUnconfirmed(order.escrowAddress),
+              { parse_mode: "Markdown" },
+            );
+          }
+        }
+        if (fundingInfo.confirmed && order.status !== OrderStatus.Active) {
           const didTransition = await tryTransitionOrderStatus(
             order.id,
             [OrderStatus.WaitingEscrow, OrderStatus.Unconfirmed],
-            OrderStatus.Refundable,
+            OrderStatus.Active,
           );
-          if (didTransition) {
-            await bot.telegram.sendMessage(
-              sellerId!,
-              dictSeller.escrowFundingFailed(
-                fundingInfo.utxoCount,
-                fundingInfo.totalFundedSats,
-                expectedSats,
-                order.id,
-              ),
-              { parse_mode: "Markdown" },
-            );
 
-            await bot.telegram.sendMessage(
-              buyerId!,
-              dictBuyer.orderCancelledSellerFunding,
-              { parse_mode: "Markdown" },
-            );
-          }
-        } else if (fundingInfo.utxoCount === 1) {
-          if (!notifiedPartial.has(order.id)) {
-            notifiedPartial.add(order.id);
+          if (!didTransition) continue;
 
-            const remainingSats = expectedSats - fundingInfo.totalFundedSats;
-            await bot.telegram.sendMessage(
-              sellerId!,
-              dictSeller.incompleteFunding(
-                fundingInfo.totalFundedSats,
-                expectedSats,
-                remainingSats,
-              ),
-              { parse_mode: "Markdown" },
-            );
-          }
-        }
-        continue;
-      }
-      notifiedPartial.delete(order.id);
-      if (
-        order.status === OrderStatus.WaitingEscrow &&
-        !fundingInfo.confirmed
-      ) {
-        await db
-          .update(orders)
-          .set({ status: OrderStatus.Unconfirmed })
-          .where(eq(orders.id, order.id));
+          const seller = await getUser(sellerId!);
+          const buyer = await getUser(buyerId!);
+          const sellerContact = "@" + escapeMarkdown(seller!.username);
+          const buyerContact = "@" + escapeMarkdown(buyer!.username);
 
-        await bot.telegram.sendMessage(
-          sellerId!,
-          dictSeller.escrowUnconfirmed(order.escrowAddress),
-          { parse_mode: "Markdown" },
-        );
-        await bot.telegram.sendMessage(
-          buyer!.telegramId,
-          dictBuyer.escrowUnconfirmed(order.escrowAddress),
-          { parse_mode: "Markdown" },
-        );
-      }
-      if (fundingInfo.confirmed && order.status !== OrderStatus.Active) {
-        const didTransition = await tryTransitionOrderStatus(
-          order.id,
-          [OrderStatus.WaitingEscrow, OrderStatus.Unconfirmed],
-          OrderStatus.Active,
-        );
+          await safeNotify(bot, seller, (dict) =>
+            dict.escrowConfirmedSeller(buyerContact, order.id),
+          );
+          await safeNotify(bot, buyer, (dict) =>
+            dict.escrowConfirmedBuyer(sellerContact, order.id),
+          );
 
-        if (!didTransition) continue;
-
-        const seller = await getUser(sellerId!);
-        const buyer = await getUser(buyerId!);
-        const sellerContact = "@" + escapeMarkdown(seller!.username);
-        const buyerContact = "@" + escapeMarkdown(buyer!.username);
-
-        await safeNotify(bot, seller, (dict) =>
-          dict.escrowConfirmedSeller(buyerContact, order.id),
-        );
-        await safeNotify(bot, buyer, (dict) =>
-          dict.escrowConfirmedBuyer(sellerContact, order.id),
-        );
-
-        const excessSats = fundingInfo.totalFundedSats - expectedSats;
-        if (excessSats > 546) {
-          const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
-          if (ADMIN_GROUP_ID) {
-            const sellerUsername = seller?.username
-              ? escapeMarkdown(seller.username)
-              : `ID: ${sellerId}`;
-            await bot.telegram.sendMessage(
-              ADMIN_GROUP_ID,
-              `⚠️ *ALERTA DE SOBRE-FONDEO*\n\n` +
-                `El vendedor @${sellerUsername} ha enviado más fondos de los solicitados en la orden \`${order.id}\`.\n\n` +
-                `Esperado: \`${expectedSats}\` sats\n` +
-                `Recibido: \`${fundingInfo.totalFundedSats}\` sats\n` +
-                `Exceso a recuperar: \`${excessSats}\` sats\n\n` +
-                `_Nota: El exceso será enviado a la billetera de comisiones del bot al finalizar la orden (ejecución de /release). Contacte al usuario para coordinar el reembolso._`,
-              { parse_mode: "Markdown" },
-            );
+          const excessSats = fundingInfo.totalFundedSats - expectedSats;
+          if (excessSats > 546) {
+            const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
+            if (ADMIN_GROUP_ID) {
+              const sellerUsername = seller?.username
+                ? escapeMarkdown(seller.username)
+                : `ID: ${sellerId}`;
+              await bot.telegram.sendMessage(
+                ADMIN_GROUP_ID,
+                `⚠️ *ALERTA DE SOBRE-FONDEO*\n\n` +
+                  `El vendedor @${sellerUsername} ha enviado más fondos de los solicitados en la orden \`${order.id}\`.\n\n` +
+                  `Esperado: \`${expectedSats}\` sats\n` +
+                  `Recibido: \`${fundingInfo.totalFundedSats}\` sats\n` +
+                  `Exceso a recuperar: \`${excessSats}\` sats\n\n` +
+                  `_Nota: El exceso será enviado a la billetera de comisiones del bot al finalizar la orden (ejecución de /release). Contacte al usuario para coordinar el reembolso._`,
+                { parse_mode: "Markdown" },
+              );
+            }
           }
         }
       }
+    } catch (err) {
+      console.error("Error en monitor de escrows:", err);
+    } finally {
+      isCheckingEscrows = false;
     }
   }, 60000);
 }
@@ -345,7 +357,9 @@ export function startOrderTimeoutsMonitor(bot: Telegraf<BotContext>) {
             }
           } else {
             const takerIdToNotify = order.takerId;
-            const republished = await republishOrderSilently(bot, order.id);
+            const republished = await republishOrderSilently(bot, order.id, [
+              OrderStatus.WaitingEscrow,
+            ]);
 
             if (republished) {
               await safeNotify(bot, order.creatorId, (dict) =>

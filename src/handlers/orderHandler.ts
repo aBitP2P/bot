@@ -30,17 +30,24 @@ const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 export async function republishOrderSilently(
   bot: Telegraf<BotContext>,
   orderId: string,
+  allowedFromStatuses: string[] = [OrderStatus.WaitingTakerConfirmation],
 ) {
   const didReset = await tryTransitionOrderStatus(
     orderId,
-    [OrderStatus.WaitingTakerConfirmation],
+    allowedFromStatuses,
     OrderStatus.Pending,
     {
       takerId: null,
       buyerAddress: null,
       fiatAmountLocked: null,
       cancelRequestedBy: null,
-      createdAt: Date.now(), // Reinicia las 24h
+      buyerXpub: null,
+      sellerXpub: null,
+      escrowIndex: 0,
+      escrowAddress: null,
+      witnessScript: null,
+      amountSats: 0,
+      createdAt: Date.now(),
     },
   );
 
@@ -107,6 +114,7 @@ export async function handleOrderCancelledRepublish(
     {
       takerId: null,
       buyerAddress: null,
+      amountSats: 0,
       fiatAmountLocked: null,
       cancelRequestedBy: null,
       createdAt: Date.now(),
@@ -331,10 +339,12 @@ export async function notifyMakerForConfirmation(
     : 0;
   const typeText = order.type === "SELL" ? dict.sellType : dict.buyType; // Perspectiva del Maker
 
-  await db
-    .update(orders)
-    .set({ status: OrderStatus.WaitingMakerConfirmation })
-    .where(eq(orders.id, order.id));
+  const didTransition = await tryTransitionOrderStatus(
+    order.id,
+    [OrderStatus.WaitingTakerConfirmation],
+    OrderStatus.WaitingMakerConfirmation,
+  );
+  if (!didTransition) return;
 
   const displayAmount = order.fiatAmountLocked
     ? order.fiatAmountLocked.toString()

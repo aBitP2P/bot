@@ -57,6 +57,8 @@ export default {
     `*⚠️ Se generará unas 12 palabras ligadas a tu usuario, la contraseña SERÁ NECESARIA para reclamar las órdenes.*\n` +
     `*Asegúrate de que la contraseña sea segura* y guardala en un lugar seguro.\n\n` +
     "🔑 *Por favor, escribe tu contraseña para configurar tu usuario:*",
+  unsafePassword:
+    "⚠️ *Contraseña insegura.* Debe tener al menos *8 caracteres*. Por favor, envía una contraseña más fuerte:",
   confirmPassword: "👉 Para confirmar, vuelve a escribir la contraseña: ",
   passwordsDoNotMatch:
     "❌ Las contraseñas no coinciden. Inténtalo de nuevo con /setpass",
@@ -614,5 +616,5 @@ export default {
   alreadyHaveActiveOrder:
     "❌ Ya tienes una orden en proceso. Debes terminarla o cancelarla antes de tomar otra.",
   invalidCustomFee:
-    "❌ El valor debe ser igual o mayor a 0.8, menor a 20 y tener hasta 2 decimales.",
+    "❌ El valor debe ser igual o mayor a 1, menor a 500 y tener hasta 2 decimales.",
 };

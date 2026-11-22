@@ -35,7 +35,10 @@ export async function fetchMempool(path: string, options?: RequestInit): Promise
   for (const baseUrl of baseUrls) {
     try {
       const url = baseUrl + cleanPath;
-      const res = await fetch(url, options);
+      const res = await fetch(url, {
+        ...options,
+        signal: options?.signal ?? AbortSignal.timeout(10_000)
+      });
       
       if (res.ok || (res.status >= 400 && res.status < 500)) {
         return res;

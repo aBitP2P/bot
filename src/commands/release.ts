@@ -68,7 +68,7 @@ export async function askReleaseConfirmation(ctx: CallbackContext | CommandConte
   if (userId !== sellerId) return ctx.reply(ctx.dict.onlySeller);
 
   const buyer = await getUser(buyerId!);
-  return await ctx.reply(ctx.dict.askReleaseConfirmation(buyer!.username), {
+  return await ctx.reply(ctx.dict.askReleaseConfirmation(escapeMarkdown(buyer!.username)), {
     parse_mode: "Markdown",
     ...Markup.inlineKeyboard([
       [Markup.button.callback(ctx.dict.btnYes, "confirmRelease_" + order.id)],
@@ -79,6 +79,9 @@ export async function askReleaseConfirmation(ctx: CallbackContext | CommandConte
 
 export async function doFundsRelease(ctx: CallbackContext | CommandContext, order: OrderRecord) {
   const { buyerId, sellerId } = getParties(order);  
+  if (!ctx.from || ctx.from.id !== sellerId) {
+    return ctx.reply(ctx.dict.onlySeller);
+  }
   try { if (ctx.callbackQuery) await ctx.deleteMessage(); } catch (e) {}
 
   const didRelease = await tryTransitionOrderStatus(
@@ -115,7 +118,7 @@ export async function doFundsRelease(ctx: CallbackContext | CommandContext, orde
     const min = parseFloat(minStr!);
     const max = parseFloat(maxStr!);
     const locked = order.fiatAmountLocked;
-    const remainingMax = max - locked;
+    const remainingMax = Number((max - locked).toFixed(2));
 
     if (remainingMax >= min) {
       const newAmountFiat =

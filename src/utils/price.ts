@@ -22,7 +22,9 @@ export async function getRateInfoFor(
     }
 
     if (!btcPrice!) {
-      const response = await fetch(`https://api.yadio.io/rate/${fiatCode}/BTC`);
+      const response = await fetch(`https://api.yadio.io/rate/${fiatCode}/BTC`,
+        { signal: AbortSignal.timeout(10_000) }
+      );
       if (!response.ok) throw new Error("Error de conexión con Yadio");
 
       const data = await response.json();

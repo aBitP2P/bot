@@ -11,6 +11,7 @@ import { getUserDict } from "../locales/index.js";
 import { OrderStatus } from "../shared/constants.js";
 import { getParties } from "../utils/order.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
+const claimingOrders = new Set<string>();
 
 export async function claimPasswordStep(ctx: CommandContext) {
   const text = ctx.message.text;
@@ -20,6 +21,12 @@ export async function claimPasswordStep(ctx: CommandContext) {
 
   ctx.session.step = "IDLE";
   ctx.session.claimOrderId = undefined;
+
+  if (!orderId || claimingOrders.has(orderId)) {
+    return ctx.reply(ctx.dict.invalidOrderStatus);
+  }
+  claimingOrders.add(orderId);
+
   await safeDeleteMsg(ctx);
   const order = await getOrder(orderId!);
   if (!order) return ctx.reply(ctx.dict.orderNotFound);
@@ -96,8 +103,10 @@ export async function claimPasswordStep(ctx: CommandContext) {
   } catch (error: any) {
     await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id);
     console.error(error);
-    return ctx.reply(ctx.dict.errorProcessingTx(error.message), {
+    ctx.reply(ctx.dict.errorProcessingTx(error.message), {
       parse_mode: "Markdown",
     });
+  } finally {
+    claimingOrders.delete(orderId)
   }
 }

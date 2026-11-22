@@ -49,6 +49,7 @@ export const orders = mysqlTable("orders", {
   escrowAddress: varchar("escrow_address", { length: 255 }),
   witnessScript: text("witness_script"),
   payoutTxid: varchar("payout_txid", { length: 128 }),
+  externalPsbt: text("external_psbt"),
 
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
   updatedAt: bigint("updated_at", { mode: "number" }).notNull().$defaultFn(() => Date.now())

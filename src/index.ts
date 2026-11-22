@@ -21,7 +21,7 @@ import { getOrder, tryTransitionOrderStatus } from "./db/orders.js";
 import { message } from "telegraf/filters";
 import { orders, users } from "./db/schema.js";
 import { db } from "./db/index.js";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import {
   buildRefundPsbt,
   buildReleasePsbt,
@@ -117,10 +117,12 @@ bot.action(/^claim_pass_(.+)$/, async (ctx) => {
   await ctx.reply(ctx.dict.typePassword);
 });
 
+const generatingExternalPsbt = new Set<string>();
+
 bot.action(/^claim_ext_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const orderId = ctx.match[1];
-  if (!orderId) return;
+  if (!orderId || generatingExternalPsbt.has(orderId)) return;
 
   const order = await getOrder(orderId);
   if (!order) return await ctx.reply(ctx.dict.orderNotFound);
@@ -138,22 +140,60 @@ bot.action(/^claim_ext_(.+)$/, async (ctx) => {
     return await ctx.reply(ctx.dict.invalidOrderStatus);
   }
 
+  generatingExternalPsbt.add(orderId);
   try {
+    if (order.escrowAddress) {
+      const spentTxid = await findSpendingTxid(order.escrowAddress);
+      if (spentTxid) {
+        await tryTransitionOrderStatus(
+          order.id,
+          [OrderStatus.Releasable, OrderStatus.Refundable],
+          isSellerRefund
+            ? OrderStatus.ExternallyRefunded
+            : OrderStatus.ExternallyCompleted,
+          { payoutTxid: spentTxid },
+        );
+        return await ctx.reply(
+          ctx.dict.orderExternallySigned(order.id, spentTxid),
+          { parse_mode: "Markdown" },
+        );
+      }
+    }
+
+    if (isSellerRefund && !order.refundAddress) {
+      ctx.session.step = "CLAIM_REFUND_ADDRESS";
+      ctx.session.claimOrderId = order.id;
+      return await ctx.reply(ctx.dict.askRefundAddress, {
+        parse_mode: "Markdown",
+      });
+    }
+
     await ctx.editMessageReplyMarkup(undefined).catch(() => {});
 
-    const user = await getUser(userId);
-    const { feeRate } = await getLiveMinerFee({
-      escrowAddress: order.escrowAddress,
-      customFeeRate: user?.customFee || null,
-    });
+    let psbtBuffer: Buffer;
 
-    const { psbt, escrowBotKeypair } = isBuyerClaim
-      ? await buildReleasePsbt(order, feeRate)
-      : await buildRefundPsbt(order, feeRate);
+    if (order.externalPsbt) {
+      psbtBuffer = Buffer.from(order.externalPsbt, "base64");
+    } else {
+      const user = await getUser(userId);
+      const { feeRate } = await getLiveMinerFee({
+        escrowAddress: order.escrowAddress,
+        customFeeRate: user?.customFee || null,
+      });
 
-    psbt.signAllInputs(escrowBotKeypair);
+      const { psbt, escrowBotKeypair } = isBuyerClaim
+        ? await buildReleasePsbt(order, feeRate)
+        : await buildRefundPsbt(order, feeRate);
 
-    const psbtBuffer = Buffer.from(psbt.toBuffer());
+      psbt.signAllInputs(escrowBotKeypair);
+      psbtBuffer = Buffer.from(psbt.toBuffer());
+
+      await db
+        .update(orders)
+        .set({ externalPsbt: psbtBuffer.toString("base64") })
+        .where(eq(orders.id, order.id));
+    }
+
     const claimType = isBuyerClaim ? "claim" : "refund";
 
     await ctx.replyWithDocument(
@@ -182,6 +222,8 @@ bot.action(/^claim_ext_(.+)$/, async (ctx) => {
       ),
       { parse_mode: "Markdown" },
     );
+  } finally {
+    generatingExternalPsbt.delete(orderId);
   }
 });
 
@@ -339,6 +381,21 @@ bot.on("callback_query", async (ctx, next) => {
       .update(users)
       .set({ customFee: null })
       .where(eq(users.telegramId, ctx.from.id));
+    await db
+      .update(orders)
+      .set({ externalPsbt: null })
+      .where(
+        and(
+          inArray(orders.status, [
+            OrderStatus.Releasable,
+            OrderStatus.Refundable,
+          ]),
+          or(
+            eq(orders.creatorId, ctx.from.id),
+            eq(orders.takerId, ctx.from.id),
+          ),
+        ),
+      );
     await ctx.answerCbQuery();
     await ctx.editMessageText(ctx.dict.feeResetSuccess, {
       parse_mode: "Markdown",
@@ -458,11 +515,17 @@ bot.on(message("text"), async (ctx, next) => {
     const [minStr, maxStr] = order.amountFiat.split("-");
     const min = parseFloat(minStr!);
     const max = parseFloat(maxStr!);
-    const inputAmount = parseFloat(text.replaceAll(",", "."));
+    const normalizedText = text.trim().replaceAll(",", ".");
+    const inputAmount = Number(normalizedText);
 
     const dict = ctx.dict;
 
-    if (isNaN(inputAmount) || inputAmount < min || inputAmount > max) {
+    if (
+      !/^\d+(\.\d{1,2})?$/.test(normalizedText) ||
+      isNaN(inputAmount) ||
+      inputAmount < min ||
+      inputAmount > max
+    ) {
       return ctx.reply(dict.invalidAmountRange(min, max), {
         parse_mode: "Markdown",
       });
@@ -513,7 +576,6 @@ bot.on(message("text"), async (ctx, next) => {
       await ctx.reply(dict.waitMaker, { parse_mode: "Markdown" });
       await notifyMakerForConfirmation(ctx, order);
     } else if (order.status === OrderStatus.WaitingMakerConfirmation) {
-      await ctx.reply(dict.waitTaker, { parse_mode: "Markdown" });
       const didTransition = await tryTransitionOrderStatus(
         orderId,
         [OrderStatus.WaitingMakerConfirmation],
@@ -521,6 +583,7 @@ bot.on(message("text"), async (ctx, next) => {
       );
 
       if (didTransition) {
+        await ctx.reply(dict.waitTaker, { parse_mode: "Markdown" });
         await initializeEscrow(ctx, orderId);
       }
     }

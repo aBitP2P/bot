@@ -10,7 +10,12 @@ import {
   buildMarginKeyboard,
   buildTakeOrderKeyboard,
 } from "../shared/keyboards.js";
-import { getMinFiatAmount, getRateInfoFor, MIN_SATS, ratesCache } from "../utils/price.js";
+import {
+  getMinFiatAmount,
+  getRateInfoFor,
+  MIN_SATS,
+  ratesCache,
+} from "../utils/price.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { generateOrderId } from "../utils/crypto.js";
 import { safeDeleteMsg, safeRemoveMarkup } from "../utils/telegram.js";
@@ -129,20 +134,36 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
   switch (step) {
     case "WAITING_FIAT":
+      const CRYPTO_TICKERS = new Set([
+        "BTC",
+        "ETH",
+        "LTC",
+        "XMR",
+        "SOL",
+        "DOGE",
+        "BNB",
+        "TRX",
+        "XRP",
+        "ADA",
+      ]);
       const f = text.trim().toUpperCase();
 
-      if (!/^[A-Z]{3}$/.test(f)) {
+      if (!/^[A-Z]{3}$/.test(f) || CRYPTO_TICKERS.has(f)) {
         await updatePreview("WAITING_FIAT", null, ctx.dict.invalidFiatCode);
         return true;
       }
 
       try {
         if (!ratesCache.has(f)) {
-          const res = await fetch(`https://api.yadio.io/rate/${f}/BTC`);
-          if (!res.ok || !(await res.json()).rate) {
+          const res = await fetch(`https://api.yadio.io/rate/${f}/BTC`, {
+            signal: AbortSignal.timeout(10_000)
+          });
+          const data = res.ok ? await res.json() : null;
+          if (!data?.rate) {
             await updatePreview("WAITING_FIAT", null, ctx.dict.invalidFiatCode);
             return true;
           }
+          ratesCache.set(f, { rate: data.rate, timestamp: Date.now() });
         }
       } catch (error) {
         await updatePreview("WAITING_FIAT", null, ctx.dict.couldNotApplyMargin);
@@ -155,8 +176,10 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
       return true;
 
     case "WAITING_AMOUNT":
-      if (!text || !/^(\d+([.,]\d{1,2})?)(-(\d+([.,]\d{1,2})?))?$/.test(text))
+      if (!text || !/^(\d+([.,]\d{1,2})?)(-(\d+([.,]\d{1,2})?))?$/.test(text)) {
+        await updatePreview("WAITING_AMOUNT", undefined, ctx.dict.promptAmount);
         return true;
+      }
 
       const parts = text.split("-");
       const amounts = parts.map((p) => {
@@ -177,14 +200,25 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
       }
 
       const [min, max] = amounts as [number, number?];
-      if (max !== undefined && min >= max) return true;
+      if (max !== undefined && min >= max) {
+        await updatePreview(
+          "WAITING_AMOUNT",
+          undefined,
+          ctx.dict.invalidAmountRange(min, max),
+        );
+        return true;
+      }
 
       let appliedRate: number;
       try {
         const rateInfo = await getRateInfoFor(min, ctx.session.draft.fiat!, 0);
         appliedRate = rateInfo.appliedRate;
       } catch (e) {
-        await updatePreview("WAITING_AMOUNT", undefined, ctx.dict.couldNotFetchPrice);
+        await updatePreview(
+          "WAITING_AMOUNT",
+          undefined,
+          ctx.dict.couldNotFetchPrice,
+        );
         return true;
       }
 
@@ -288,9 +322,7 @@ export async function handleWizardAction(ctx: BotContext) {
     }
   } catch (error) {
     console.error("Error validando el margen:", error);
-    await ctx.reply(
-      ctx.dict.couldNotApplyMargin,
-    );
+    await ctx.reply(ctx.dict.couldNotApplyMargin);
   }
 }
 

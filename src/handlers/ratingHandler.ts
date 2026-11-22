@@ -20,7 +20,9 @@ export async function handleRating(
   const order = await getOrder(orderId);
   if (!order)
     return ctx.answerCbQuery(ctx.dict.orderNotFound, { show_alert: true });
-
+  if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+    return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
+  }
   const isCreator = order.creatorId === raterId;
   const isTaker = order.takerId === raterId;
 

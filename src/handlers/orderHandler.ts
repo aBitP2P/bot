@@ -1,6 +1,3 @@
-import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
-import { orders } from "../db/schema.js";
 import {
   type BotContext,
   type CallbackContext,
@@ -9,11 +6,14 @@ import {
 } from "../types.js";
 import { getUser } from "../db/users.js";
 import { type Language, getUserDict, t } from "../locales/index.js";
-import { Markup, Telegraf } from "telegraf";
+import { Telegraf } from "telegraf";
+import { publishOrderToChannel } from "../services/orderPublisher.js";
 import { initializeEscrow } from "./escrowHandler.js";
 import {
   getOrder,
   getUserOrders,
+  setFiatAmountLocked,
+  setTakerAndAmount,
   tryTransitionOrderStatus,
 } from "../db/orders.js";
 import {
@@ -22,11 +22,9 @@ import {
 } from "../shared/keyboards.js";
 import { getRateInfoFor } from "../utils/price.js";
 import { escapeMarkdown } from "../utils/format.js";
-import { safeDeleteMsg } from "../utils/telegram.js";
+import { notifyUser, safeDeleteMsg } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
-import { getBotFeePercent } from "../config/fees.js";
-const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
-
+import { getBuyerNetSats } from "../config/fees.js";
 export async function republishOrderSilently(
   bot: Telegraf<BotContext>,
   orderId: string,
@@ -59,43 +57,7 @@ export async function republishOrderSilently(
   const orderCreator = await getUser(order.creatorId);
   if (!orderCreator) return false;
 
-  const dict = getUserDict(orderCreator.language);
-
-  const sentChannelMsg = await bot.telegram.sendMessage(
-    PUBLIC_CHANNEL_ID,
-    dict.channelOrder({
-      action: order.type === "SELL" ? dict.actionSell : dict.actionBuy,
-      amountFiat: order.amountFiat,
-      fiat: order.fiatCode,
-      payDirection:
-        order.type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy,
-      method: escapeMarkdown(order.paymentMethod),
-      daysUsing: Math.floor((Date.now() - orderCreator.createdAt) / 86400000),
-      hashtag: `#${order.type}${order.fiatCode}`,
-      margin: order.margin,
-      rating: orderCreator.rating || 0,
-      ratingCount: orderCreator.ratingCount,
-      tradesCount: orderCreator.tradesCount || 0,
-      id: order.id,
-    }),
-    {
-      parse_mode: "Markdown",
-      ...Markup.inlineKeyboard([
-        [
-          Markup.button.callback(
-            order.type === "SELL" ? dict.btnBuyBitcoin : dict.btnSellBitcoin,
-            `take_order_${orderId}`,
-          ),
-        ],
-      ]),
-    },
-  );
-
-  await db
-    .update(orders)
-    .set({ channelMessageId: sentChannelMsg.message_id })
-    .where(eq(orders.id, orderId));
-
+  await publishOrderToChannel(bot.telegram, order, orderCreator);
   return true;
 }
 
@@ -135,43 +97,8 @@ export async function handleOrderCancelledRepublish(
 
   const order = await getOrder(orderId);
   const orderCreator = (await getUser(order!.creatorId))!;
-  const dict = getUserDict(orderCreator.language);
 
-  const sentChannelMsg = await ctx.telegram.sendMessage(
-    PUBLIC_CHANNEL_ID,
-    dict.channelOrder({
-      action: order!.type === "SELL" ? dict.actionSell : dict.actionBuy,
-      amountFiat: order!.amountFiat,
-      fiat: order!.fiatCode,
-      payDirection:
-        order!.type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy,
-      method: escapeMarkdown(order!.paymentMethod),
-      daysUsing: Math.floor((Date.now() - orderCreator.createdAt) / 86400000),
-      hashtag: `#${order!.type}${order!.fiatCode}`,
-      margin: order!.margin,
-      rating: orderCreator.rating || 0,
-      ratingCount: orderCreator.ratingCount,
-      tradesCount: orderCreator.tradesCount || 0,
-      id: order!.id,
-    }),
-    {
-      parse_mode: "Markdown",
-      ...Markup.inlineKeyboard([
-        [
-          Markup.button.callback(
-            order!.type === "SELL" ? dict.btnBuyBitcoin : dict.btnSellBitcoin,
-            `take_order_${orderId}`,
-          ),
-        ],
-      ]),
-    },
-  );
-
-  await db
-    .update(orders)
-    .set({ channelMessageId: sentChannelMsg.message_id })
-    .where(eq(orders.id, orderId));
-  return;
+  await publishOrderToChannel(ctx.telegram, order!, orderCreator);
 }
 
 export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
@@ -241,7 +168,7 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
   if (order.takerId !== takerId) {
     return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
   }
-  const dict = getUserDict((await getUser(takerId))?.language);
+  const dict = ctx.dict;
   await ctx.editMessageReplyMarkup(undefined);
 
   if (order.amountFiat.includes("-")) {
@@ -252,10 +179,7 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
   }
 
   const exactAmount = parseFloat(order.amountFiat);
-  await db
-    .update(orders)
-    .set({ fiatAmountLocked: exactAmount })
-    .where(eq(orders.id, orderId));
+  await setFiatAmountLocked(orderId, exactAmount);
 
   await proceedAfterTakerAmount(ctx, {
     ...order,
@@ -283,13 +207,7 @@ export async function proceedAfterTakerAmount(
     );
   }
 
-  await db
-    .update(orders)
-    .set({
-      takerId: ctx.user.telegramId,
-      amountSats: baseSats,
-    })
-    .where(eq(orders.id, order.id));
+  await setTakerAndAmount(order.id, ctx.user.telegramId, baseSats);
 
   order.amountSats = baseSats;
 
@@ -298,7 +216,7 @@ export async function proceedAfterTakerAmount(
 
   if (isTakerBuyer) {
     ctx.session.awaitingAddressForOrder = order.id;
-    const estimatedSats = estimateBuyerSats(baseSats);
+    const estimatedSats = getBuyerNetSats(baseSats);
     if (estimatedSats === 0) {
       ctx.session.awaitingAddressForOrder = undefined;
       return handleOrderCancelledRepublish(
@@ -311,20 +229,9 @@ export async function proceedAfterTakerAmount(
       parse_mode: "Markdown",
     });
   } else {
-    await db
-      .update(orders)
-      .set({ takerId: ctx.user.telegramId })
-      .where(eq(orders.id, order.id));
     await ctx.reply(dict.waitMaker, { parse_mode: "Markdown" });
     await notifyMakerForConfirmation(ctx, order);
   }
-}
-
-function estimateBuyerSats(baseSats: number): number {
-  const botFeePercent = getBotFeePercent(baseSats);
-  const totalBotFeeSats = Math.floor(baseSats * (botFeePercent / 100));
-  const partyFeeSats = Math.floor(totalBotFeeSats / 2);
-  return baseSats - partyFeeSats;
 }
 
 export async function notifyMakerForConfirmation(
@@ -389,16 +296,15 @@ export async function handleMakerConfirm(
 
   if (isMakerBuyer) {
     ctx.session.awaitingAddressForOrder = orderId;
-    const estimatedSats = estimateBuyerSats(order.amountSats);
+    const estimatedSats = getBuyerNetSats(order.amountSats);
 
     if (estimatedSats === 0) {
       ctx.session.awaitingAddressForOrder = undefined;
 
-      const takerDict = getUserDict((await getUser(order.takerId!))?.language);
-      await ctx.telegram.sendMessage(
+      await notifyUser(
+        ctx,
         order.takerId!,
-        takerDict.priceApiErrorRepublish,
-        { parse_mode: "Markdown" },
+        (d) => d.priceApiErrorRepublish,
       );
 
       return handleOrderCancelledRepublish(
@@ -412,12 +318,7 @@ export async function handleMakerConfirm(
       parse_mode: "Markdown",
     });
   } else {
-    let taker = await getUser(order.takerId!);
-    await ctx.telegram.sendMessage(
-      order.takerId!,
-      getUserDict(taker?.language).acceptedNowWaitingEscrow,
-      { parse_mode: "Markdown" },
-    );
+    await notifyUser(ctx, order.takerId!, (d) => d.acceptedNowWaitingEscrow);
     const didTransition = await tryTransitionOrderStatus(
       orderId,
       [OrderStatus.WaitingMakerConfirmation],

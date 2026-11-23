@@ -7,7 +7,9 @@ import {
   getBotFeeAddress,
 } from "./fees.js";
 import type { OrderRecord } from "../../types.js";
-import { getBotFeePercent } from "../../config/fees.js";
+import { getBuyerNetSats, getPartyFeeSats } from "../../config/fees.js";
+import { getParties } from "../../utils/order.js";
+import { REQUIRED_CONFIRMATIONS } from "../../shared/constants.js";
 import * as ecc from "tiny-secp256k1"
 import BIP32Factory from "bip32";
 import { getUser } from "../../db/users.js";
@@ -27,8 +29,7 @@ async function buildBasePsbt(order: OrderRecord) {
   if (!utxos || utxos.length === 0)
     throw new Error("No hay fondos en el Escrow.");
 
-  const buyerId = order.type === "BUY" ? order.creatorId : order.takerId;
-  const sellerId = order.type === "SELL" ? order.creatorId : order.takerId;
+  const { buyerId, sellerId } = getParties(order);
 
   const [buyer, seller] = await Promise.all([getUser(buyerId!), getUser(sellerId!)]);
 
@@ -105,7 +106,7 @@ async function buildBasePsbt(order: OrderRecord) {
 export async function checkEscrowFunding(
   address: string,
   currentHeight?: number,
-  requiredConf: number = parseInt(process.env.REQUIRED_CONFIRMATIONS!) || 2,
+  requiredConf: number = REQUIRED_CONFIRMATIONS,
 ): Promise<{ totalFundedSats: number, confirmed: boolean, utxoCount: number } | null> {
   try {
     const res = await fetchMempool(`address/${address}/utxo`, {
@@ -150,8 +151,7 @@ export async function buildReleasePsbt(
     await buildBasePsbt(order);
 
   const baseSats = order.amountSats;
-  const botFeePercent = getBotFeePercent(baseSats);
-  const buyerFee = Math.floor((baseSats * (botFeePercent / 100)) / 2);
+  const buyerFee = getPartyFeeSats(baseSats);
 
   const botOutputEstimate = totalInput - baseSats + buyerFee;
   const outputCount = botOutputEstimate >= DUST_LIMIT ? 2 : 1;
@@ -163,7 +163,7 @@ export async function buildReleasePsbt(
     customFeeRate: feeRate ?? null,
   });
 
-  const buyerOutput = baseSats - buyerFee - minerFee;
+  const buyerOutput = getBuyerNetSats(baseSats, minerFee);
   if (buyerOutput < DUST_LIMIT)
     throw new Error(
       `Fondos insuficientes tras comisiones (Neto: ${buyerOutput} sats). Por favor, espere a que baje la congestión de la red.`,
@@ -187,20 +187,12 @@ export async function buildReleasePsbt(
   return { psbt, escrowBotKeypair };
 }
 
-export async function broadcastReleaseTx(
+export function broadcastReleaseTx(
   order: OrderRecord,
-  signerCredential: { mnemonic?: string; },
+  signerCredential: { mnemonic?: string },
   feeRate?: number | null,
 ): Promise<string> {
-
-  const { psbt, escrowBotKeypair } = await buildReleasePsbt(order, feeRate);
-  const userKeypair = deriveUserChildKeypair(signerCredential.mnemonic!, order.escrowIndex!);
-
-  psbt.signAllInputs(userKeypair);
-  psbt.signAllInputs(escrowBotKeypair);
-  psbt.finalizeAllInputs();
-
-  return executeBroadcast(psbt.extractTransaction().toHex());
+  return signAndBroadcast(buildReleasePsbt, order, signerCredential, feeRate);
 }
 
 export async function buildRefundPsbt(
@@ -225,13 +217,21 @@ export async function buildRefundPsbt(
   return { psbt, escrowBotKeypair };
 }
 
-export async function broadcastRefundTx(
+export function broadcastRefundTx(
   order: OrderRecord,
   signerCredential: { mnemonic?: string },
   feeRate?: number | null,
 ): Promise<string> {
+  return signAndBroadcast(buildRefundPsbt, order, signerCredential, feeRate);
+}
 
-  const { psbt, escrowBotKeypair } = await buildRefundPsbt(order, feeRate);
+async function signAndBroadcast(
+  buildPsbt: typeof buildReleasePsbt,
+  order: OrderRecord,
+  signerCredential: { mnemonic?: string },
+  feeRate?: number | null,
+): Promise<string> {
+  const { psbt, escrowBotKeypair } = await buildPsbt(order, feeRate);
   const userKeypair = deriveUserChildKeypair(signerCredential.mnemonic!, order.escrowIndex!);
 
   psbt.signAllInputs(userKeypair);

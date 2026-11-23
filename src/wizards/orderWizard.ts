@@ -1,26 +1,19 @@
 import { type BotContext, type CommandContext } from "../types.js";
 import { type WizardStep, type OrderType } from "./types.js";
-import { t, type Language, dictionaries } from "../locales/index.js";
-import { db } from "../db/index.js";
-import { orders } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { type Language, dictionaries } from "../locales/index.js";
 import { getUser } from "../db/users.js";
 import { createOrder, getOrdersCreatedBy } from "../db/orders.js";
-import {
-  buildMarginKeyboard,
-  buildTakeOrderKeyboard,
-} from "../shared/keyboards.js";
+import { buildMarginKeyboard } from "../shared/keyboards.js";
 import {
   getMinFiatAmount,
   getRateInfoFor,
   MIN_SATS,
   ratesCache,
 } from "../utils/price.js";
-import { escapeMarkdown } from "../utils/format.js";
 import { generateOrderId } from "../utils/crypto.js";
 import { safeDeleteMsg, safeRemoveMarkup } from "../utils/telegram.js";
-
-const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
+import { resetSession } from "../utils/session.js";
+import { publishOrderToChannel as publishOrderToChannelService } from "../services/orderPublisher.js";
 
 function getPromptForStep(step: WizardStep, lang: Language): string {
   const dict = dictionaries[lang];
@@ -92,7 +85,7 @@ export async function cancelWizard(ctx: BotContext) {
   const userId = ctx.from?.id;
   if (!userId) return;
 
-  ctx.session = { step: "IDLE", draft: {} };
+  resetSession(ctx);
   await ctx.reply(ctx.dict.cancelled);
 }
 
@@ -246,7 +239,7 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
 
       ctx.session.draft.paymentMethod = text.trim();
       await publishOrderToChannel(ctx, lang);
-      ctx.session = { step: "IDLE", draft: {} };
+      resetSession(ctx);
       return true;
 
     default:
@@ -334,17 +327,6 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
   if (!userId) return;
 
   const user = await getUser(userId);
-
-  const daysUsing = user
-    ? Math.floor((Date.now() - user.createdAt) / 86400000)
-    : 0;
-  const tradesCount = user?.tradesCount || 0;
-
-  const action = type === "SELL" ? dict.actionSell : dict.actionBuy;
-  const payDirection =
-    type === "SELL" ? dict.payDirectionSell : dict.payDirectionBuy;
-  const hashtag = `#${type}${fiat}`;
-
   const orderId = generateOrderId();
 
   await createOrder({
@@ -357,37 +339,18 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
     margin: margin!,
   });
 
-  const orderMessage = dict.channelOrder({
-    action,
-    amountFiat: amount!,
-    fiat: fiat!,
-    payDirection,
-    method: escapeMarkdown(paymentMethod!),
-    daysUsing,
-    hashtag,
-    margin: margin!,
-    rating: user!.rating || 0,
-    tradesCount: tradesCount,
-    ratingCount: user!.ratingCount,
-    id: orderId,
-  });
-
-  const buttonText =
-    type === "SELL" ? t(lang, "btnBuyBitcoin") : t(lang, "btnSellBitcoin");
-
-  const sentChannelMsg = await ctx.telegram.sendMessage(
-    CHANNEL_ID,
-    orderMessage,
+  await publishOrderToChannelService(
+    ctx.telegram,
     {
-      parse_mode: "Markdown",
-      ...buildTakeOrderKeyboard(buttonText, orderId),
+      id: orderId,
+      type: type!,
+      fiatCode: fiat!,
+      amountFiat: amount!,
+      paymentMethod: paymentMethod!,
+      margin: margin!,
     },
+    user!,
   );
-
-  await db
-    .update(orders)
-    .set({ channelMessageId: sentChannelMsg.message_id })
-    .where(eq(orders.id, orderId));
 
   const chatId = ctx.chat?.id;
   const previewId = ctx.session.previewMessageId;

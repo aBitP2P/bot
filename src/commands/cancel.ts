@@ -3,17 +3,16 @@ import {
   getUserOrders,
   tryTransitionOrderStatus,
 } from "../db/orders.js";
-import { getUser } from "../db/users.js";
-import { getUserDict } from "../locales/index.js";
+import { notifyUser } from "../utils/telegram.js";
 import type { CallbackContext, CommandContext } from "../types.js";
 import { handleOrderCancelledRepublish } from "../handlers/orderHandler.js";
 import { OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { checkEscrowFunding } from "../core/bitcoin/transactions.js";
 import { getParties } from "../utils/order.js";
-import { getBotFeePercent } from "../config/fees.js";
+import { getSellerDepositSats } from "../config/fees.js";
+import { removeOrderFromChannel } from "../services/orderPublisher.js";
 
-const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
 export async function cancelCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -59,16 +58,7 @@ export async function handleOrderCancelFromCommand(
     );
     if (!didCancel) return ctx.reply(dict.cancelNotAllowed); // alguien más ya la tomó justo ahora
 
-    if (order.channelMessageId) {
-      try {
-        await ctx.telegram.deleteMessage(
-          PUBLIC_CHANNEL_ID,
-          order.channelMessageId,
-        );
-      } catch (e) {
-        console.error(e);
-      }
-    }
+    await removeOrderFromChannel(ctx.telegram, order.channelMessageId);
 
     return ctx.reply(dict.orderCancelled);
   }
@@ -89,11 +79,7 @@ export async function handleOrderCancelFromCommand(
       if (order.escrowAddress) {
         const funding = await checkEscrowFunding(order.escrowAddress);
         if (funding && funding.totalFundedSats > 0) {
-          const botFeePercent = getBotFeePercent(order.amountSats);
-          const sellerFeeSats = Math.floor(
-            order.amountSats * (botFeePercent / 2 / 100),
-          );
-          const expectedSats = order.amountSats + sellerFeeSats;
+          const expectedSats = getSellerDepositSats(order.amountSats);
 
           if (funding.totalFundedSats < expectedSats) {
             const didCancel = await tryTransitionOrderStatus(
@@ -104,12 +90,8 @@ export async function handleOrderCancelFromCommand(
             if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
 
             if (counterpartyId) {
-              const counterparty = await getUser(counterpartyId);
-              const cDict = getUserDict(counterparty?.language);
-              await ctx.telegram.sendMessage(
-                counterpartyId,
-                cDict.counterpartyCanceledDeleted(order.id),
-                { parse_mode: "Markdown" },
+              await notifyUser(ctx, counterpartyId, (d) =>
+                d.counterpartyCanceledDeleted(order.id),
               );
             }
             return ctx.reply(dict.partialDepositCancelled);
@@ -127,12 +109,8 @@ export async function handleOrderCancelFromCommand(
       if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
 
       if (counterpartyId) {
-        const counterparty = await getUser(counterpartyId);
-        const cDict = getUserDict(counterparty?.language);
-        await ctx.telegram.sendMessage(
-          counterpartyId,
-          cDict.counterpartyCanceledDeleted(order.id),
-          { parse_mode: "Markdown" },
+        await notifyUser(ctx, counterpartyId, (d) =>
+          d.counterpartyCanceledDeleted(order.id),
         );
       }
 
@@ -154,12 +132,8 @@ export async function handleOrderCancelFromCommand(
         if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
 
         if (counterpartyId) {
-          const counterparty = await getUser(counterpartyId);
-          const cDict = getUserDict(counterparty?.language);
-          await ctx.telegram.sendMessage(
-            counterpartyId,
-            cDict.counterpartyCanceledDeleted(order.id),
-            { parse_mode: "Markdown" },
+          await notifyUser(ctx, counterpartyId, (d) =>
+            d.counterpartyCanceledDeleted(order.id),
           );
         }
         return ctx.reply(dict.orderCancelled);
@@ -169,12 +143,8 @@ export async function handleOrderCancelFromCommand(
       // handleOrderCancelledRepublish hace su propio UPDATE; usamos el status
       // actual ya validado arriba (no terminal) como única vía de entrada.
       if (counterpartyId) {
-        const counterparty = await getUser(counterpartyId);
-        const cDict = getUserDict(counterparty?.language);
-        await ctx.telegram.sendMessage(
-          counterpartyId,
-          cDict.matchCancelledRepublished(order.id),
-          { parse_mode: "Markdown" },
+        await notifyUser(ctx, counterpartyId, (d) =>
+          d.matchCancelledRepublished(order.id),
         );
       }
       return handleOrderCancelledRepublish(ctx, orderId);
@@ -196,12 +166,8 @@ export async function handleOrderCancelFromCommand(
       await ctx.reply(dict.cancelRequestSuccess);
 
       if (counterpartyId) {
-        const counterparty = await getUser(counterpartyId);
-        const cDict = getUserDict(counterparty?.language);
-        await ctx.telegram.sendMessage(
-          counterpartyId,
-          cDict.cancelNotifiedCounterparty(order.id),
-          { parse_mode: "Markdown" },
+        await notifyUser(ctx, counterpartyId, (d) =>
+          d.cancelNotifiedCounterparty(order.id),
         );
       }
       return;
@@ -231,14 +197,13 @@ export async function handleOrderCancelFromCommand(
       );
 
       if (requesterId) {
-        const requester = await getUser(requesterId);
-        const rDict = getUserDict(requester?.language);
-        await ctx.telegram.sendMessage(
+        await notifyUser(
+          ctx,
           requesterId,
-          requesterId === sellerId
-            ? rDict.cancelAcceptedSeller(order.id)
-            : rDict.cancelAccepted(order.id),
-          { parse_mode: "Markdown" },
+          (d) =>
+            requesterId === sellerId
+              ? d.cancelAcceptedSeller(order.id)
+              : d.cancelAccepted(order.id),
         );
       }
       return;

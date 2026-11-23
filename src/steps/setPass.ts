@@ -5,6 +5,7 @@ import { encryptData } from "../utils/crypto.js";
 import { users } from "../db/schema.js";
 import { db } from "../db/index.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
+import { resetSession } from "../utils/session.js";
 import type { ResultSetHeader } from "mysql2";
 
 export async function setPassStep(ctx: CommandContext) {
@@ -25,7 +26,7 @@ export async function setPassStep(ctx: CommandContext) {
 
   if (password !== ctx.session.passwordToConfirm) {
     await ctx.reply(ctx.dict.passwordsDoNotMatch);
-    ctx.session = { step: "IDLE", draft: {} };
+    resetSession(ctx);
     return;
   }
 

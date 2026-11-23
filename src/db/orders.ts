@@ -96,3 +96,72 @@ export async function tryConditionalUpdate(
 
   return result.affectedRows > 0;
 }
+
+export async function setFiatAmountLocked(orderId: string, amount: number) {
+  await db
+    .update(orders)
+    .set({ fiatAmountLocked: amount })
+    .where(eq(orders.id, orderId));
+}
+
+export async function setTakerAndAmount(
+  orderId: string,
+  takerId: number,
+  amountSats: number,
+) {
+  await db
+    .update(orders)
+    .set({ takerId, amountSats })
+    .where(eq(orders.id, orderId));
+}
+
+export async function setChannelMessageId(orderId: string, messageId: number) {
+  await db
+    .update(orders)
+    .set({ channelMessageId: messageId })
+    .where(eq(orders.id, orderId));
+}
+
+export async function setBuyerAddress(orderId: string, address: string) {
+  await db
+    .update(orders)
+    .set({ buyerAddress: address })
+    .where(eq(orders.id, orderId));
+}
+
+export async function setRefundAddress(orderId: string, address: string) {
+  await db
+    .update(orders)
+    .set({ refundAddress: address })
+    .where(eq(orders.id, orderId));
+}
+
+export async function setExternalPsbt(orderId: string, psbt: string | null) {
+  await db
+    .update(orders)
+    .set({ externalPsbt: psbt })
+    .where(eq(orders.id, orderId));
+}
+
+export async function setEscrowData(
+  orderId: string,
+  data: Pick<
+    typeof orders.$inferInsert,
+    "buyerXpub" | "sellerXpub" | "escrowIndex" | "escrowAddress" | "witnessScript"
+  >,
+) {
+  await db.update(orders).set(data).where(eq(orders.id, orderId));
+}
+
+/** Invalida el PSBT externo de las órdenes liberables/reembolsables del usuario (tras cambiar la comisión). */
+export async function clearExternalPsbtsForUser(userId: number) {
+  await db
+    .update(orders)
+    .set({ externalPsbt: null })
+    .where(
+      and(
+        inArray(orders.status, [OrderStatus.Releasable, OrderStatus.Refundable]),
+        or(eq(orders.creatorId, userId), eq(orders.takerId, userId)),
+      ),
+    );
+}

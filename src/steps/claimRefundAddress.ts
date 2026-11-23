@@ -1,7 +1,4 @@
-import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
-import { getOrder } from "../db/orders.js";
-import { orders } from "../db/schema.js";
+import { getOrder, setRefundAddress } from "../db/orders.js";
 import type { CommandContext } from "../types.js";
 import { isValidAddress } from "../core/bitcoin/index.js";
 import { startClaimPasswordFlow } from "../commands/claim.js";
@@ -21,10 +18,7 @@ export async function claimRefundAddressStep(ctx: CommandContext) {
     return ctx.reply(ctx.dict.invalidRefundAddress, { parse_mode: "Markdown" });
   }
 
-  await db
-    .update(orders)
-    .set({ refundAddress: address })
-    .where(eq(orders.id, order.id));
+  await setRefundAddress(order.id, address);
 
   const updatedOrder = { ...order, refundAddress: address };
   return startClaimPasswordFlow(ctx, updatedOrder, address);

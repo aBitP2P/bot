@@ -5,12 +5,11 @@ import {
 } from "../db/orders.js";
 import type { CallbackContext, CommandContext, OrderRecord } from "../types.js";
 import { getUser } from "../db/users.js";
-import { getUserDict, t, type Language } from "../locales/index.js";
 import {
   buildOrderSelectKeyboard,
   buildRatingKeyboard,
-  buildTakeOrderKeyboard,
 } from "../shared/keyboards.js";
+import { publishOrderToChannel } from "../services/orderPublisher.js";
 import { db } from "../db/index.js";
 import { orders, users } from "../db/schema.js";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
@@ -19,6 +18,7 @@ import { OrderStatus } from "../shared/constants.js";
 import { Markup } from "telegraf";
 import { getParties } from "../utils/order.js";
 import { generateOrderId } from "../utils/crypto.js";
+import { notifyUser } from "../utils/telegram.js";
 
 export async function releaseCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -52,37 +52,49 @@ export async function releaseCommand(ctx: CommandContext) {
   await askReleaseConfirmation(ctx, orderId);
 }
 
-
-export async function askReleaseConfirmation(ctx: CallbackContext | CommandContext, orderId: string) {
+export async function askReleaseConfirmation(
+  ctx: CallbackContext | CommandContext,
+  orderId: string,
+) {
   const userId = ctx.from.id;
 
-  try { if (ctx.callbackQuery) await ctx.deleteMessage(); } catch (e) {}
+  try {
+    if (ctx.callbackQuery) await ctx.deleteMessage();
+  } catch (e) {}
   const order = await getOrder(orderId);
   if (!order) return ctx.reply(ctx.dict.orderNotFound);
   if (order.status !== OrderStatus.FiatSent)
     return ctx.reply(ctx.dict.waitForBuyerFiatSent(order.id), {
       parse_mode: "Markdown",
     });
-  
+
   const { buyerId, sellerId } = getParties(order);
   if (userId !== sellerId) return ctx.reply(ctx.dict.onlySeller);
 
   const buyer = await getUser(buyerId!);
-  return await ctx.reply(ctx.dict.askReleaseConfirmation(escapeMarkdown(buyer!.username)), {
-    parse_mode: "Markdown",
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback(ctx.dict.btnYes, "confirmRelease_" + order.id)],
-      [Markup.button.callback(ctx.dict.btnNo, "cancelRelease")]
-    ])
-  })
+  return await ctx.reply(
+    ctx.dict.askReleaseConfirmation(escapeMarkdown(buyer!.username)),
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback(ctx.dict.btnYes, "confirmRelease_" + order.id)],
+        [Markup.button.callback(ctx.dict.btnNo, "cancelRelease")],
+      ]),
+    },
+  );
 }
 
-export async function doFundsRelease(ctx: CallbackContext | CommandContext, order: OrderRecord) {
-  const { buyerId, sellerId } = getParties(order);  
+export async function doFundsRelease(
+  ctx: CallbackContext | CommandContext,
+  order: OrderRecord,
+) {
+  const { buyerId, sellerId } = getParties(order);
   if (!ctx.from || ctx.from.id !== sellerId) {
     return ctx.reply(ctx.dict.onlySeller);
   }
-  try { if (ctx.callbackQuery) await ctx.deleteMessage(); } catch (e) {}
+  try {
+    if (ctx.callbackQuery) await ctx.deleteMessage();
+  } catch (e) {}
 
   const didRelease = await tryTransitionOrderStatus(
     order.id,
@@ -96,22 +108,20 @@ export async function doFundsRelease(ctx: CallbackContext | CommandContext, orde
     .set({ tradesCount: sql`${users.tradesCount} + 1` })
     .where(inArray(users.telegramId, [sellerId!, buyerId!]));
 
-  const buyer = await getUser(buyerId!);
-  const dictBuyer = getUserDict(buyer?.language);
-
   await ctx.reply(ctx.dict.releaseSuccessSeller(order.id), {
     parse_mode: "Markdown",
   });
-  await ctx.telegram.sendMessage(buyerId!, dictBuyer.releaseToBuyer(order.id), {
-    parse_mode: "Markdown",
-  });
+  await notifyUser(ctx, buyerId!, (d) => d.releaseToBuyer(order.id));
 
   await ctx.reply(ctx.dict.rateCounterpartyMessage, {
     ...buildRatingKeyboard(order.id),
   });
-  await ctx.telegram.sendMessage(buyerId!, dictBuyer.rateCounterpartyMessage, {
-    ...buildRatingKeyboard(order.id),
-  });
+  await notifyUser(
+    ctx,
+    buyerId!,
+    (d) => d.rateCounterpartyMessage,
+    buildRatingKeyboard(order.id),
+  );
 
   if (order.amountFiat.includes("-") && order.fiatAmountLocked) {
     const [minStr, maxStr] = order.amountFiat.split("-");
@@ -138,64 +148,25 @@ export async function doFundsRelease(ctx: CallbackContext | CommandContext, orde
 
       const creator = await getUser(order.creatorId);
       if (creator) {
-        const dictCreator = getUserDict(creator.language);
-        const action =
-          order.type === "SELL"
-            ? dictCreator.actionSell
-            : dictCreator.actionBuy;
-        const payDirection =
-          order.type === "SELL"
-            ? dictCreator.payDirectionSell
-            : dictCreator.payDirectionBuy;
-        const hashtag = `#${order.type}${order.fiatCode}`;
-        const daysUsing = Math.floor(
-          (Date.now() - creator.createdAt) / 86400000,
-        );
-        const tradesCount = creator.tradesCount || 0;
-
-        const orderMessage = dictCreator.channelOrder({
-          action,
-          amountFiat: newAmountFiat,
-          fiat: order.fiatCode,
-          payDirection,
-          method: escapeMarkdown(order.paymentMethod),
-          daysUsing,
-          hashtag,
-          margin: order.margin,
-          rating: creator.rating || 0,
-          tradesCount,
-          ratingCount: creator.ratingCount,
-          id: newOrderId,
-        });
-
-        const buttonText =
-          order.type === "SELL"
-            ? t(creator.language as Language, "btnBuyBitcoin")
-            : t(creator.language as Language, "btnSellBitcoin");
-
-        const CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
-        const sentChannelMsg = await ctx.telegram.sendMessage(
-          CHANNEL_ID,
-          orderMessage,
+        await publishOrderToChannel(
+          ctx.telegram,
           {
-            parse_mode: "Markdown",
-            ...buildTakeOrderKeyboard(buttonText, newOrderId),
+            id: newOrderId,
+            type: order.type,
+            fiatCode: order.fiatCode,
+            amountFiat: newAmountFiat,
+            paymentMethod: order.paymentMethod,
+            margin: order.margin,
           },
+          creator,
         );
 
-        await db
-          .update(orders)
-          .set({ channelMessageId: sentChannelMsg.message_id })
-          .where(eq(orders.id, newOrderId));
-
-        await ctx.telegram.sendMessage(
-          order.creatorId,
-          dictCreator.rangeOrderPartiallyCompleted(
+        await notifyUser(ctx, creator, (d) =>
+          d.rangeOrderPartiallyCompleted(
             newOrderId,
             newAmountFiat,
             order.fiatCode,
           ),
-          { parse_mode: "Markdown" },
         );
       }
     }

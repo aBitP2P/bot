@@ -1,9 +1,18 @@
-import { and, eq, inArray, or } from "drizzle-orm";
 import { Markup } from "telegraf";
+import { clearExternalPsbtsForUser } from "../db/orders.js";
 import { db } from "../db/index.js";
-import { orders, users } from "../db/schema.js";
-import { type CommandContext } from "../types.js";
-import { OrderStatus } from "../shared/constants.js";
+import { users } from "../db/schema.js";
+import { eq } from "drizzle-orm";
+import { type BotContext, type CallbackContext, type CommandContext } from "../types.js";
+
+async function applyCustomFee(ctx: BotContext, customFee: number | null) {
+  await db
+    .update(users)
+    .set({ customFee })
+    .where(eq(users.telegramId, ctx.from!.id));
+
+  await clearExternalPsbtsForUser(ctx.from!.id);
+}
 
 export async function setFeeCommand(ctx: CommandContext) {
   const defaultFeeKeyboard = Markup.inlineKeyboard([
@@ -30,23 +39,15 @@ export async function setFeeCommand(ctx: CommandContext) {
     return ctx.reply(ctx.dict.invalidCustomFee);
   }
 
-  await db
-    .update(users)
-    .set({ customFee: newFee })
-    .where(eq(users.telegramId, ctx.from.id));
-
-  await db
-    .update(orders)
-    .set({ externalPsbt: null })
-    .where(
-      and(
-        inArray(orders.status, [OrderStatus.Releasable, OrderStatus.Refundable]),
-        or(
-          eq(orders.creatorId, ctx.from.id),
-          eq(orders.takerId, ctx.from.id),
-        ),
-      ),
-    );
+  await applyCustomFee(ctx, newFee);
 
   return ctx.reply(ctx.dict.customFeeChanged(newFee));
+}
+
+export async function resetFeeToDefault(ctx: CallbackContext) {
+  await applyCustomFee(ctx, null);
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(ctx.dict.feeResetSuccess, {
+    parse_mode: "Markdown",
+  });
 }

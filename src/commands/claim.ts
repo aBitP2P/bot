@@ -8,7 +8,7 @@ import { OrderStatus } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { getParties } from "../utils/order.js";
 import { safeDeleteMsg } from "../utils/telegram.js";
-import { getBotFeePercent } from "../config/fees.js";
+import { getBuyerNetSats, getPartyFeeSats } from "../config/fees.js";
 import { Markup } from "telegraf";
 
 export async function claimCommand(ctx: CommandContext) {
@@ -95,10 +95,6 @@ export async function startClaimPasswordFlow(
   const dict = ctx.dict;
   const isRefund = order.status === OrderStatus.Refundable;
   const baseSats = order.amountSats;
-  const botFeePercent = getBotFeePercent(baseSats); // <-- Obtener comisión
-  
-  let outputCount = 1;
-  let totalFundedSats = baseSats;
 
   if (order.escrowAddress) {
     const spentTxid = await findSpendingTxid(order.escrowAddress);
@@ -115,11 +111,16 @@ export async function startClaimPasswordFlow(
     }
   }
 
+  // Se consulta una sola vez y se reutiliza en el preview y en el monto final.
+  const funding = order.escrowAddress
+    ? await checkEscrowFunding(order.escrowAddress)
+    : null;
+  const totalFundedSats = funding?.totalFundedSats ?? baseSats;
+
+  let outputCount = 1;
   if (!isRefund) {
-    const funding = await checkEscrowFunding(order.escrowAddress!);
-    totalFundedSats = funding?.totalFundedSats ?? baseSats;
-    const buyerFee = Math.floor((baseSats * (botFeePercent / 100)) / 2);
-    const botOutputEstimate = totalFundedSats - baseSats + buyerFee;
+    const botOutputEstimate =
+      totalFundedSats - baseSats + getPartyFeeSats(baseSats);
     outputCount = botOutputEstimate >= DUST_LIMIT ? 2 : 1;
   }
 
@@ -129,19 +130,9 @@ export async function startClaimPasswordFlow(
     customFeeRate: ctx.user.customFee,
   });
 
-  let finalAmount: number;
-
-  if (isRefund) {
-    // En reembolso devolvemos TODO lo depositado en el escrow (incluye la parte
-    // de la comisión del bot que el vendedor pagó al fondear), menos solo la fee de minería.
-    const funding = await checkEscrowFunding(order.escrowAddress!);
-    const totalFundedSats = funding?.totalFundedSats ?? order.amountSats;
-    finalAmount = totalFundedSats - minerFeeSats;
-  } else {
-    const totalBotFeeSats = Math.floor(baseSats * (botFeePercent / 100));
-    const buyerFeeSats = Math.floor(totalBotFeeSats / 2);
-    finalAmount = baseSats - buyerFeeSats - minerFeeSats;
-  }
+  const finalAmount = isRefund
+    ? totalFundedSats - minerFeeSats
+    : getBuyerNetSats(baseSats, minerFeeSats);
 
   await ctx.reply(
   dict.showClaimPreview(minerFeeSats, finalAmount, receivingAddress, feeRate),

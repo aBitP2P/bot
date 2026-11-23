@@ -2,13 +2,12 @@ import { and, eq, or } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
 import { orders } from "../db/schema.js";
-import { getUser } from "../db/users.js";
-import { getUserDict } from "../locales/index.js";
 import type { CallbackContext, CommandContext } from "../types.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { OrderStatus } from "../shared/constants.js";
 import { getParties } from "../utils/order.js";
+import { notifyUser } from "../utils/telegram.js";
 
 export async function fiatsentCommand(ctx: CommandContext) {
   const userId = ctx.from.id;
@@ -62,16 +61,12 @@ export async function markAsFiatSent(ctx: CallbackContext | CommandContext, orde
   );
   if (!didMark) return ctx.reply(dict.invalidOrderStatus);
 
-  const seller = await getUser(sellerId!);
-  const dictSeller = getUserDict(seller?.language);
   const buyerName = ctx.from.username
     ? escapeMarkdown(ctx.from.username)
     : "El comprador";
 
   await ctx.reply(dict.fiatSentToBuyer(order.id), { parse_mode: "Markdown" });
-  await ctx.telegram.sendMessage(
-    sellerId!,
-    dictSeller.fiatSentToSeller(order.id, buyerName),
-    { parse_mode: "Markdown" },
+  await notifyUser(ctx, sellerId!, (d) =>
+    d.fiatSentToSeller(order.id, buyerName),
   );
 }

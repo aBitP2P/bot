@@ -6,14 +6,14 @@ import {
   tryConditionalUpdate,
 } from "../db/orders.js";
 import { getUser } from "../db/users.js";
-import { dictionaries, getUserDict } from "../locales/index.js";
+import { dictionaries } from "../locales/index.js";
 import type { CommandContext, CallbackContext } from "../types.js";
 import { generateVerificationCode } from "../utils/crypto.js";
 import { isAdmin } from "../utils/admin.js";
 import { buildSettleDisputeKeyboard } from "../shared/keyboards.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { getParties } from "../utils/order.js";
-import { safeRemoveMarkup } from "../utils/telegram.js";
+import { notifyUser, safeRemoveMarkup } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
 
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
@@ -72,19 +72,9 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
 
   const buyer = await getUser(buyerId);
   const seller = await getUser(sellerId);
-  const buyerDict = getUserDict(buyer?.language);
-  const sellerDict = getUserDict(seller?.language);
 
-  await ctx.telegram.sendMessage(
-    buyerId,
-    buyerDict.disputeOpened(buyerCode, orderId),
-    { parse_mode: "Markdown" },
-  );
-  await ctx.telegram.sendMessage(
-    sellerId,
-    sellerDict.disputeOpened(sellerCode, orderId),
-    { parse_mode: "Markdown" },
-  );
+  await notifyUser(ctx, buyer, (d) => d.disputeOpened(buyerCode, orderId));
+  await notifyUser(ctx, seller, (d) => d.disputeOpened(sellerCode, orderId));
 
   if (!ADMIN_GROUP_ID) {
     console.error(
@@ -143,44 +133,26 @@ export async function takeDispute(ctx: CommandContext, orderId: string) {
 
   const buyer = await getUser(buyerId);
   const seller = await getUser(sellerId);
-  const buyerDict = getUserDict(buyer?.language);
-  const sellerDict = getUserDict(seller?.language);
 
   const codes = disputeCodesCache.get(orderId);
 
   if (codes) {
-    await ctx.telegram.sendMessage(
-      buyerId,
-      buyerDict.disputeTakenNotification(
-        adminUsername,
-        codes.buyerCode,
-        orderId,
-      ),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, buyer, (d) =>
+      d.disputeTakenNotification(adminUsername, codes.buyerCode, orderId),
     );
-    await ctx.telegram.sendMessage(
-      sellerId,
-      sellerDict.disputeTakenNotification(
-        adminUsername,
-        codes.sellerCode,
-        orderId,
-      ),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, seller, (d) =>
+      d.disputeTakenNotification(adminUsername, codes.sellerCode, orderId),
     );
     disputeCodesCache.delete(orderId);
   } else {
     console.warn(
       `Códigos de disputa no disponibles en memoria para la orden ${orderId} (¿reinicio del bot?)`,
     );
-    await ctx.telegram.sendMessage(
-      buyerId,
-      buyerDict.disputeTakenNotificationNoCode(adminUsername, orderId),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, buyer, (d) =>
+      d.disputeTakenNotificationNoCode(adminUsername, orderId),
     );
-    await ctx.telegram.sendMessage(
-      sellerId,
-      sellerDict.disputeTakenNotificationNoCode(adminUsername, orderId),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, seller, (d) =>
+      d.disputeTakenNotificationNoCode(adminUsername, orderId),
     );
   }
 }
@@ -278,41 +250,27 @@ export async function resolveDispute(
 
   const buyer = await getUser(buyerId);
   const seller = await getUser(sellerId);
-  const buyerDict = getUserDict(buyer?.language);
-  const sellerDict = getUserDict(seller?.language);
 
   if (resolution === "BUYER") {
-    await ctx.telegram.sendMessage(
-      buyerId,
-      buyerDict.settleBuyerWinsNotifyBuyer(orderId),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, buyer, (d) =>
+      d.settleBuyerWinsNotifyBuyer(orderId),
     );
-    await ctx.telegram.sendMessage(
-      sellerId,
-      sellerDict.settleBuyerWinsNotifySeller(orderId),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, seller, (d) =>
+      d.settleBuyerWinsNotifySeller(orderId),
     );
   } else if (resolution === "SELLER") {
-    await ctx.telegram.sendMessage(
-      sellerId,
-      sellerDict.settleSellerWinsNotifySeller(orderId),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, seller, (d) =>
+      d.settleSellerWinsNotifySeller(orderId),
     );
-    await ctx.telegram.sendMessage(
-      buyerId,
-      buyerDict.settleSellerWinsNotifyBuyer(orderId),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, buyer, (d) =>
+      d.settleSellerWinsNotifyBuyer(orderId),
     );
   } else {
-    await ctx.telegram.sendMessage(
-      buyerId,
-      buyerDict.settleCancelledNotifyBuyer(orderId),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, buyer, (d) =>
+      d.settleCancelledNotifyBuyer(orderId),
     );
-    await ctx.telegram.sendMessage(
-      sellerId,
-      sellerDict.settleCancelledNotifySeller(orderId),
-      { parse_mode: "Markdown" },
+    await notifyUser(ctx, seller, (d) =>
+      d.settleCancelledNotifySeller(orderId),
     );
   }
 }

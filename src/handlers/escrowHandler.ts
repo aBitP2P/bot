@@ -1,14 +1,11 @@
-import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
-import { getOrder } from "../db/orders.js";
-import { orders } from "../db/schema.js";
+import { getOrder, setEscrowData } from "../db/orders.js";
 import { getUser } from "../db/users.js";
 import { getUserDict } from "../locales/index.js";
 import type { BotContext } from "../types.js";
 import { generateEscrow, getNextDerivationIndex, getPairCounterKey } from "../core/bitcoin/index.js";
 import QRCode from "qrcode";
 import { getParties } from "../utils/order.js";
-import { getBotFeePercent } from "../config/fees.js";
+import { getSellerDepositSats } from "../config/fees.js";
 
 export async function initializeEscrow(ctx: BotContext, orderId: string) {
   const order = await getOrder(orderId);
@@ -35,12 +32,7 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
     escrowIndex,
   );
 
-  const baseSats = order.amountSats;
-
-  const botFeePercent = getBotFeePercent(baseSats);
-  const sellerFeeSats = Math.floor(baseSats * (botFeePercent / 2 / 100));
-
-  const satsToDeposit = baseSats + sellerFeeSats;
+  const satsToDeposit = getSellerDepositSats(order.amountSats);
 
   const totalBtc = (satsToDeposit / 100_000_000).toFixed(8);
   const bitcoinUri = `bitcoin:${address}?amount=${totalBtc}`;
@@ -52,16 +44,13 @@ export async function initializeEscrow(ctx: BotContext, orderId: string) {
     color: { dark: "#000000", light: "#ffffff" },
   });
 
-  await db
-    .update(orders)
-    .set({
-      buyerXpub: buyer.xpub,
-      sellerXpub: seller.xpub,
-      escrowIndex,
-      escrowAddress: address,
-      witnessScript,
-    })
-    .where(eq(orders.id, orderId));
+  await setEscrowData(orderId, {
+    buyerXpub: buyer.xpub,
+    sellerXpub: seller.xpub,
+    escrowIndex,
+    escrowAddress: address,
+    witnessScript,
+  });
 
   await ctx.telegram.sendPhoto(
     sellerId!,

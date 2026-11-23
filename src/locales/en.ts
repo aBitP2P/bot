@@ -359,12 +359,15 @@ export default {
     `2. Confirm the amount is correct.\n` +
     `3. If everything is fine, release the Bitcoins by running:\n\n` +
     `\`/release ${orderId}\``,
-  askReleaseConfirmation: (buyerName: string) =>
+  askReleaseConfirmation: (buyerName: string, orderId: string, fiatAmount: number, fiatCode: string) =>
     `⚠️ *Release Confirmation*\n\n` +
-    `You are about to release the Bitcoin funds from the escrow vault to @**${buyerName}**.\n\n` +
-    `🏦 *Before proceeding, it is strictly necessary that you log into your bank account or wallet and verify for yourself that the payment has been successfully credited.*\n\n` +
-    `_Please remember that once released, Bitcoin funds cannot be recovered under any circumstances._\n\n` +
-    `Do you wish to confirm the final release of the funds?`,
+    `You are about to release the Bitcoin funds from the vault to @**${buyerName}**.\n\n` +
+    `📋 *Order Details:*\n` +
+    `• *Order ID:* \`#${orderId}\`\n` +
+    `• *Amount to verify:* **${fiatAmount} ${fiatCode}**\n\n` +
+    `🏦 *Before proceeding, you must log in to your bank account or wallet and verify for yourself that the payment has been properly credited.*\n\n` +
+    `_Remember that once released, the Bitcoin funds cannot be recovered under any circumstances._\n\n` +
+    `Do you want to confirm the final release of the funds?`,
   releaseSuccessSeller: (orderId: string) =>
     `✅ You have authorized the release of order \`${orderId}\`.\n\n` +
     `The buyer has been notified to sign and claim their Bitcoin. Thank you for using the service!`,

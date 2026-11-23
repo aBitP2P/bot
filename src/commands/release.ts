@@ -73,7 +73,12 @@ export async function askReleaseConfirmation(
 
   const buyer = await getUser(buyerId!);
   return await ctx.reply(
-    ctx.dict.askReleaseConfirmation(escapeMarkdown(buyer!.username)),
+    ctx.dict.askReleaseConfirmation(
+      escapeMarkdown(buyer!.username),
+      order.id,
+      order.fiatAmountLocked!,
+      order.fiatCode,
+    ),
     {
       parse_mode: "Markdown",
       ...Markup.inlineKeyboard([

@@ -362,9 +362,12 @@ export default {
     `2. Confirma que el monto es correcto.\n` +
     `3. Si todo está bien, libera los Bitcoins ejecutando:\n\n` +
     `\`/release ${orderId}\``,
-  askReleaseConfirmation: (buyerName: string) =>
+  askReleaseConfirmation: (buyerName: string, orderId: string, fiatAmount: number, fiatCode: string) =>
     `⚠️ *Confirmación de Liberación*\n\n` +
     `Estás a punto de liberar los fondos en Bitcoin de la bóveda a favor de @**${buyerName}**.\n\n` +
+    `📋 *Detalles de la Orden:*\n` +
+    `• *ID de Orden:* \`#${orderId}\`\n` +
+    `• *Monto a verificar:* **${fiatAmount} ${fiatCode}**\n\n` +
     `🏦 *Antes de continuar, es estrictamente necesario que inicies sesión en tu cuenta bancaria o billetera y verifiques por ti mismo que el pago ha sido acreditado correctamente.*\n\n` +
     `_Recuerda que una vez liberados, los fondos en Bitcoin no podrán ser recuperados bajo ninguna circunstancia._\n\n` +
     `¿Deseas confirmar la liberación definitiva de los fondos?`,

@@ -6,18 +6,14 @@ import {
   broadcastRefundTx,
 } from "../core/bitcoin/index.js";
 import { decryptData } from "../utils/crypto.js";
-import { getUser } from "../db/users.js";
-import { getUserDict } from "../locales/index.js";
 import { OrderStatus } from "../shared/constants.js";
 import { getParties } from "../utils/order.js";
-import { safeDeleteMsg } from "../utils/telegram.js";
+import { notifyUser, safeDeleteMsg } from "../utils/telegram.js";
 const claimingOrders = new Set<string>();
 
 export async function claimPasswordStep(ctx: CommandContext) {
-  const text = ctx.message.text;
-  const password = text;
+  const password = ctx.message.text;
   const orderId = ctx.session.claimOrderId;
-  const userId = ctx.from.id;
 
   ctx.session.step = "IDLE";
   ctx.session.claimOrderId = undefined;
@@ -26,6 +22,20 @@ export async function claimPasswordStep(ctx: CommandContext) {
     return ctx.reply(ctx.dict.invalidOrderStatus);
   }
   claimingOrders.add(orderId);
+
+  try {
+    return await claimWithPassword(ctx, orderId, password);
+  } finally {
+    claimingOrders.delete(orderId);
+  }
+}
+
+async function claimWithPassword(
+  ctx: CommandContext,
+  orderId: string,
+  password: string,
+) {
+  const userId = ctx.from.id;
 
   await safeDeleteMsg(ctx);
   const order = await getOrder(orderId!);
@@ -59,14 +69,9 @@ export async function claimPasswordStep(ctx: CommandContext) {
   try {
     const targetStatus = isRefund ? OrderStatus.Refunded : OrderStatus.Completed;
     const currentValidStatus = isRefund ? OrderStatus.Refundable : OrderStatus.Releasable;
-    let txid = "";
-    try {
-      txid = isRefund
+    const txid = isRefund
       ? await broadcastRefundTx(order, { mnemonic: signerMnemonic }, ctx.user.customFee)
       : await broadcastReleaseTx(order, { mnemonic: signerMnemonic }, ctx.user.customFee);
-    } catch (error: any) {
-      throw error;
-    }
 
     // si por alguna razón el status ya no fuera RELEASABLE/REFUNDABLE
     // (p. ej. dos invocaciones casi simultáneas de /claim), al menos no se
@@ -92,12 +97,8 @@ export async function claimPasswordStep(ctx: CommandContext) {
     );
 
     if (isRefund && buyerId) {
-      const buyer = await getUser(buyerId);
-      const buyerDict = getUserDict(buyer?.language);
-      await ctx.telegram.sendMessage(
-        buyerId,
-        buyerDict.refundCompletedNotification(order.id),
-        { parse_mode: "Markdown" },
+      await notifyUser(ctx, buyerId, (d) =>
+        d.refundCompletedNotification(order.id),
       );
     }
   } catch (error: any) {
@@ -106,7 +107,5 @@ export async function claimPasswordStep(ctx: CommandContext) {
     ctx.reply(ctx.dict.errorProcessingTx(error.message), {
       parse_mode: "Markdown",
     });
-  } finally {
-    claimingOrders.delete(orderId)
   }
 }

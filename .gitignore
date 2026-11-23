@@ -2,6 +2,7 @@
 package-lock.json
 node_modules/
 sqlite.db
+.vscode
 *.test.ts
 *.zip
 *.txt

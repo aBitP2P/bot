@@ -1,6 +1,6 @@
 {
   "name": "abitp2p",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "",
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=esnext --minify --packages=external --outfile=dist/index.js",
@@ -24,7 +24,7 @@
     "tiny-secp256k1": "^2.2.4"
   },
   "devDependencies": {
-    "@types/node": "^26.5.0",
+    "@types/node": "^26.6.6",
     "@types/qrcode": "^1.5.6",
     "drizzle-kit": "^0.31.10",
     "esbuild": "^0.28.2",

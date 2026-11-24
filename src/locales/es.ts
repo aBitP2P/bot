@@ -87,12 +87,12 @@ export default {
   }: {
     margin: number;
     satsAmount: number;
-    minFiatRequired: number;
+    minFiatRequired: string;
     fiatCode: string;
   }) =>
     `⚠️ *Monto insuficiente tras aplicar margen*\n\n` +
     `Al aplicar tu margen del ${margin}%, el total a recibir bajó a ${satsAmount.toLocaleString()} sats.\n\n` +
-    `Para cumplir con el mínimo de ${MIN_SATS.toLocaleString()} sats, debes iniciar la orden con al menos *$${minFiatRequired.toFixed(2)} ${fiatCode}*.\n\n` +
+    `Para cumplir con el mínimo de ${MIN_SATS.toLocaleString()} sats, debes iniciar la orden con al menos *$${minFiatRequired} ${fiatCode}*.\n\n` +
     `🔄 Por favor, inicia la creación de la orden nuevamente.`,
   wizardPreview: (
     type: string,
@@ -101,26 +101,30 @@ export default {
     margin: string,
     method: string,
     prompt: string,
-  ) =>
-    `🛠 *Creando Orden (${type})*\n\n` +
-    "ℹ️ Puedes usar /exit para salir del proceso\n\n" +
-    `💱 Moneda FIAT: \`${fiat}\`\n` +
-    `📊 Monto / Rango: \`${amount}\`\n` +
-    `📈 Margen: \`${margin}\`\n` +
-    `💳 Método de pago: \`${method}\`\n\n` +
-    `👉 *${prompt}*`,
+  ) => {
+    const lines = [`🔧 *Creando anuncio · ${type} BTC*`];
+    if (fiat) lines.push(`Moneda FIAT: ${fiat} ${getFiatEmoji(fiat)}`);
+    if (amount && amount !== "0") lines.push(`Importe: ${amount} ${fiat}`);
+    if (margin)
+      lines.push(
+        `Margen: ${margin === "0%" ? "A precio de mercado" : `*${margin}* respecto al mercado`}`,
+      );
+    if (method) lines.push("", "Método de pago", method);
+
+    lines.push("", "_Puedes cancelar con /exit._", "", `• *${prompt}*`);
+
+    return lines.join("\n");
+  },
+  wizardFinishedPrompt: "Proceso de creación terminado.",
   channelOrder: ({
     action,
     amountFiat,
     fiat,
     payDirection,
-    ratingCount,
     method,
     daysUsing,
-    hashtag,
     margin,
-    rating,
-    tradesCount,
+    ratingLabel,
     id,
   }: {
     action: string;
@@ -129,22 +133,16 @@ export default {
     payDirection: string;
     method: string;
     daysUsing: number;
-    hashtag: string;
     margin: number;
-    rating: number;
-    tradesCount: number;
+    ratingLabel: string;
     id: string;
-    ratingCount: number;
   }) =>
-    `**${action} Bitcoin**\n\n` +
-    `Por ${amountFiat.split("-").join(" - ")} ${fiat} ${getFiatEmoji(fiat)}\n ` +
-    `💳 ${payDirection} ${method}\n` +
-    `🤝 Tiene ${tradesCount} operaciones exitosas\n` +
-    `⏳ Usa el bot hace ${daysUsing} días\n\n` +
-    `${hashtag}\n` +
-    `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
-    `${rating.toFixed(1)} ${"⭐".repeat(Math.floor(rating))} (${ratingCount})\n\n` +
-    `\`${id}\``,
+    `*${action} BTC*\n\n` +
+    `Por ${amountFiat} · ${fiat} ${getFiatEmoji(fiat)}\n` +
+    `${payDirection} ${method}\n\n` +
+    `${margin === 0 ? "A precio de mercado" : `*${margin > 0 ? "+" : ""}${margin} %* sobre el precio de mercado`}\n\n` +
+    `${daysUsing} días · ${ratingLabel}\n` +
+    `ID: \`${id}\``,
   orderPublishedSuccess: (orderId: string) =>
     "✅ *¡Orden publicada exitosamente en el canal!*\n" +
     "Puedes cancelarlo usando `/cancel " +
@@ -174,7 +172,7 @@ export default {
         `📄 Orden: \`${o.id}\``,
         `Tipo: \`${typeLabel}\``,
         `Fiat: \`${o.fiatCode}\``,
-        `Monto: \`${o.fiatAmountLocked ?? o.amountFiat} ${o.fiatCode}\``,
+        `Monto: \`${o.amountFiat} ${o.fiatCode}\``,
         `Margen: \`${marginLabel}\``,
         `Estado: \`${statusLabel}\``,
         `Creada: \`${createdDate}\``,
@@ -206,11 +204,11 @@ export default {
     method: string;
     id: string;
   }) =>
-    `*${type}* Bitcoin\n\n` +
-    `💵 Monto: ${amount} ${fiat}\n` +
-    `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
-    `💳 Método: ${method}\n\n` +
-    `¿Estás seguro de que deseas continuar?\n\n` +
+    `*Confirmar orden · ${type} BTC*\n\n` +
+    `Importe: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
+    `Margen: ${margin === 0 ? "A precio de mercado" : `*${margin > 0 ? "+" : ""}${margin}%* respecto al mercado`}\n` +
+    `Método de pago: ${method}\n\n` +
+    `• *¿Confirmas que deseas continuar?*\n\n` +
     `ID: \`${id}\``,
   makerAskConfirm: ({
     type,
@@ -220,7 +218,7 @@ export default {
     method,
     trades,
     days,
-    rating,
+    ratingLabel,
     id,
   }: {
     type: string;
@@ -230,18 +228,19 @@ export default {
     method: string;
     trades: number;
     days: number;
-    rating: number;
+    ratingLabel: string;
     id: string;
   }) =>
-    `Alguien quiere tomar tu orden de *${type}*.\n\n` +
-    `💵 Monto: ${amount} ${fiat}\n` +
-    `📈 Tasa: ${margin === 0 ? "A precio de mercado" : `yadio.io ${margin > 0 ? "+" + margin : margin}%`}\n` +
-    `💳 Método: ${method}\n\n` +
-    `👤 **Datos de la contraparte:**\n` +
-    `🤝 Operaciones: ${trades}\n` +
-    `⏳ Antigüedad: ${days} días\n` +
-    `⭐ Reputación: ${rating.toFixed(1)}/5.0\n\n` +
-    `¿Deseas confirmar e iniciar el intercambio?\n\n` +
+    `📩 *Nueva solicitud · ${type} BTC*\n\n` +
+    `Alguien quiere tomar tu orden.\n\n` +
+    `Importe: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
+    `Margen: ${margin === 0 ? "A precio de mercado" : `*${margin > 0 ? "+" : ""}${margin}%* respecto al mercado`}\n` +
+    `Método de pago: ${method}\n\n` +
+    `👤 *Datos de la contraparte*\n` +
+    `Operaciones: ${trades}\n` +
+    `Antigüedad: ${days} días\n` +
+    `Reputación: ${ratingLabel}\n\n` +
+    `• *¿Deseas confirmar e iniciar el intercambio?*\n\n` +
     `ID: \`${id}\``,
   promptExactAmount: (range: string, fiat: string) =>
     `Esta orden permite un rango de **${range} ${fiat}**.\n\n` +
@@ -300,12 +299,12 @@ export default {
     "❌ *Orden cancelada*\n\nEl depósito fue alterado en la red antes de confirmarse. El acuerdo ha sido abortado por tu seguridad.",
   escrowConfirmedBuyer: (sellerContact: string, orderId: string) =>
     `✅ *¡Escrow Fondeado y Confirmado!*\n\n` +
-    `Los fondos están asegurados en el contrato inteligente.\n\n` +
+    `Los fondos están asegurados en la bóveda segura.\n\n` +
     `🗣 **Contacta al vendedor aquí:** ${sellerContact}\n\n` +
     `_Instrucciones: Realiza el pago por el método acordado. Una vez transferido el dinero, ejecuta el comando_ \`/fiatsent ${orderId}\` _para notificar al vendedor._`,
   escrowConfirmedSeller: (buyerContact: string, orderId: string) =>
     `✅ *¡Escrow Fondeado y Confirmado!*\n\n` +
-    `Tus fondos están asegurados en el contrato inteligente.\n\n` +
+    `Tus fondos están asegurados en la bóveda segura.\n\n` +
     `🗣 **Contacta al comprador aquí:** ${buyerContact}\n\n` +
     `_Instrucciones: Espera el pago del comprador. Una vez que verifiques que el dinero está en tu cuenta, ejecuta el comando_ \`/release ${orderId}\` _para liberar los fondos._`,
   feesList: (
@@ -362,7 +361,12 @@ export default {
     `2. Confirma que el monto es correcto.\n` +
     `3. Si todo está bien, libera los Bitcoins ejecutando:\n\n` +
     `\`/release ${orderId}\``,
-  askReleaseConfirmation: (buyerName: string, orderId: string, fiatAmount: number, fiatCode: string) =>
+  askReleaseConfirmation: (
+    buyerName: string,
+    orderId: string,
+    fiatAmount: string,
+    fiatCode: string,
+  ) =>
     `⚠️ *Confirmación de Liberación*\n\n` +
     `Estás a punto de liberar los fondos en Bitcoin de la bóveda a favor de @**${buyerName}**.\n\n` +
     `📋 *Detalles de la Orden:*\n` +

@@ -14,6 +14,7 @@ import { generateOrderId } from "../utils/crypto.js";
 import { safeDeleteMsg, safeRemoveMarkup } from "../utils/telegram.js";
 import { resetSession } from "../utils/session.js";
 import { publishOrderToChannel as publishOrderToChannelService } from "../services/orderPublisher.js";
+import { formatFiatAmount } from "../utils/format.js";
 
 function getPromptForStep(step: WizardStep, lang: Language): string {
   const dict = dictionaries[lang];
@@ -40,21 +41,21 @@ function getWizardPreviewText(
   const dict = dictionaries[lang];
 
   const typeText = draft.type === "BUY" ? dict.buyType : dict.sellType;
-  const fiatText = draft.fiat || " ";
-  const amountText = draft.amount || " ";
+  const fiatText = draft.fiat || "";
+  const amountText = draft.amount || "";
 
-  let marginText = " ";
+  let marginText = "";
   if (draft.margin !== undefined) {
     marginText = draft.margin > 0 ? `+${draft.margin}%` : `${draft.margin}%`;
   }
 
-  const methodText = draft.paymentMethod || " ";
+  const methodText = draft.paymentMethod || "";
   const promptText = customPrompt ?? getPromptForStep(step, lang);
 
   return dict.wizardPreview(
     typeText,
     fiatText,
-    amountText,
+    formatFiatAmount(amountText),
     marginText,
     methodText,
     promptText,
@@ -274,7 +275,7 @@ export async function handleWizardAction(ctx: BotContext) {
       await ctx.reply(
         ctx.dict.invalidAmountAfterMargin({
           margin,
-          minFiatRequired,
+          minFiatRequired: formatFiatAmount(minFiatRequired),
           satsAmount,
           fiatCode: fiat!,
         }),
@@ -360,6 +361,10 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
         chatId,
         previewId,
         undefined,
+        getWizardPreviewText(ctx.session.draft, "IDLE", ctx.user.language as any, ctx.dict.wizardFinishedPrompt),
+        { parse_mode: "Markdown" },
+      );
+      await ctx.reply(
         dict.orderPublishedSuccess(orderId),
         { parse_mode: "Markdown" },
       );

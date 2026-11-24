@@ -11,7 +11,7 @@ import type { CommandContext, CallbackContext } from "../types.js";
 import { generateVerificationCode } from "../utils/crypto.js";
 import { isAdmin } from "../utils/admin.js";
 import { buildSettleDisputeKeyboard } from "../shared/keyboards.js";
-import { escapeMarkdown } from "../utils/format.js";
+import { escapeMarkdown, formatFiatAmount } from "../utils/format.js";
 import { getParties } from "../utils/order.js";
 import { notifyUser, safeRemoveMarkup } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
@@ -89,7 +89,7 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
       orderId: order.id,
       type: order.type,
       fiatCode: order.fiatCode,
-      amountFiat: `${order.fiatAmountLocked}`,
+      amountFiat: formatFiatAmount(order.fiatAmountLocked!),
       status: previousStatus,
       escrowAddress: order.escrowAddress || "N/A",
       buyerUsername: escapeMarkdown(buyer!.username),

@@ -21,7 +21,7 @@ import {
   buildTakerConfirmKeyboard,
 } from "../shared/keyboards.js";
 import { getRateInfoFor } from "../utils/price.js";
-import { escapeMarkdown } from "../utils/format.js";
+import { escapeMarkdown, formatFiatAmount, makeStarString } from "../utils/format.js";
 import { notifyUser, safeDeleteMsg } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
 import { getBuyerNetSats } from "../config/fees.js";
@@ -148,7 +148,7 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
     dict.takerAskConfirm({
       type: typeText,
       fiat: order.fiatCode,
-      amount: order.amountFiat,
+      amount: formatFiatAmount(order.amountFiat),
       margin: order.margin,
       method: escapeMarkdown(order.paymentMethod),
       id: order.id,
@@ -173,7 +173,7 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
 
   if (order.amountFiat.includes("-")) {
     ctx.session.awaitingAmountForOrder = order.id;
-    return ctx.reply(dict.promptExactAmount(order.amountFiat, order.fiatCode), {
+    return ctx.reply(dict.promptExactAmount(formatFiatAmount(order.amountFiat), order.fiatCode), {
       parse_mode: "Markdown",
     });
   }
@@ -256,18 +256,19 @@ export async function notifyMakerForConfirmation(
   const displayAmount = order.fiatAmountLocked
     ? order.fiatAmountLocked.toString()
     : order.amountFiat;
+  const rating = taker?.rating || 0;
 
   await ctx.telegram.sendMessage(
     order.creatorId,
     dict.makerAskConfirm({
       type: typeText,
       fiat: order.fiatCode,
-      amount: displayAmount,
+      amount: formatFiatAmount(displayAmount),
       margin: order.margin,
       method: escapeMarkdown(order.paymentMethod),
       trades: taker?.tradesCount || 0,
       days: daysUsing,
-      rating: taker?.rating || 0,
+      ratingLabel: `${makeStarString(rating)} ${rating}/5`,
       id: order.id,
     }),
     {

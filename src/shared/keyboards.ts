@@ -1,4 +1,5 @@
 import { Markup } from "telegraf";
+import { formatFiatAmount } from "../utils/format.js";
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   return Array.from({ length: Math.ceil(items.length / size) }, (_, index) =>
@@ -9,7 +10,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 export function buildOrderSelectKeyboard(userOrders: any[], prefix: string) {
   const buttons = userOrders.map((o) =>
     Markup.button.callback(
-      `${o.id.slice(0, 2)}..${o.id.slice(-2)} - ${o.type} - ${o.fiatAmountLocked ? o.fiatAmountLocked +  " - " : ""}${o.fiatCode}`,
+      `${o.id.slice(0, 2)}..${o.id.slice(-2)} - ${o.type} - ${o.fiatAmountLocked ? formatFiatAmount(o.fiatAmountLocked) + " - " : ""}${o.fiatCode}`,
       `${prefix}_${o.id}`,
     ),
   );

@@ -13,7 +13,7 @@ import { publishOrderToChannel } from "../services/orderPublisher.js";
 import { db } from "../db/index.js";
 import { orders, users } from "../db/schema.js";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { escapeMarkdown } from "../utils/format.js";
+import { escapeMarkdown, formatFiatAmount } from "../utils/format.js";
 import { OrderStatus } from "../shared/constants.js";
 import { Markup } from "telegraf";
 import { getParties } from "../utils/order.js";
@@ -76,7 +76,7 @@ export async function askReleaseConfirmation(
     ctx.dict.askReleaseConfirmation(
       escapeMarkdown(buyer!.username),
       order.id,
-      order.fiatAmountLocked!,
+      formatFiatAmount(order.fiatAmountLocked!),
       order.fiatCode,
     ),
     {
@@ -169,7 +169,7 @@ export async function doFundsRelease(
         await notifyUser(ctx, creator, (d) =>
           d.rangeOrderPartiallyCompleted(
             newOrderId,
-            newAmountFiat,
+            formatFiatAmount(newAmountFiat),
             order.fiatCode,
           ),
         );

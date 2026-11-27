@@ -6,6 +6,7 @@ export type WizardStep =
   | "CLAIM_PASSWORD"
   | "CLAIM_REFUND_ADDRESS"
   | "CLAIM_REFUND_CONFIRM"
+  | "SELECT_SETTLEMENT_METHOD"
   | "WAITING_FIAT"
   | "WAITING_AMOUNT"
   | "WAITING_MARGIN"
@@ -13,6 +14,7 @@ export type WizardStep =
 
 export interface OrderDraft {
   type?: OrderType;
+  settlementMethod?: string;
   fiat?: string;
   amount?: string;
   margin?: number;

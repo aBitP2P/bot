@@ -1,6 +1,12 @@
 export const ratesCache = new Map<string, { rate: number; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 1000;
 export const MIN_SATS = 2000;
+/**
+ * Máximo de sats permitido para órdenes con liquidación Lightning.
+ * Si no está definido (o es 0), no se aplica límite.
+ */
+export const LIGHTNING_MAX_SATS =
+  Number(process.env.LIGHTNING_MAX_SATS_AMOUNT) || Infinity;
 
 export async function getRateInfoFor(
   fiatAmount: number,
@@ -49,4 +55,13 @@ export function getMinFiatAmount(btcPrice: number): number {
   const minFiat = minBtc * btcPrice;
 
   return Number(minFiat.toFixed(2));
+}
+
+export function getMaxLightningFiatAmount(btcPrice: number): number {
+  if (!Number.isFinite(LIGHTNING_MAX_SATS)) return Infinity;
+
+  const maxBtc = LIGHTNING_MAX_SATS / 100_000_000;
+  const maxFiat = maxBtc * btcPrice;
+
+  return Number(maxFiat.toFixed(2));
 }

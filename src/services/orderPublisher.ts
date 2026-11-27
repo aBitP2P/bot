@@ -4,12 +4,13 @@ import { getUserDict } from "../locales/index.js";
 import { buildTakeOrderKeyboard } from "../shared/keyboards.js";
 import type { OrderRecord, UserRecord } from "../types.js";
 import { escapeMarkdown, formatFiatAmount, makeStarString } from "../utils/format.js";
+import { SettlementMethodLabel } from "../shared/constants.js";
 
 const PUBLIC_CHANNEL_ID = process.env.PUBLIC_CHANNEL_ID!;
 
 export type PublishableOrder = Pick<
   OrderRecord,
-  "id" | "type" | "fiatCode" | "amountFiat" | "paymentMethod" | "margin"
+  "id" | "type" | "fiatCode" | "amountFiat" | "paymentMethod" | "margin" | "settlementMethod"
 >;
 
 /**
@@ -29,6 +30,7 @@ export async function publishOrderToChannel(
     PUBLIC_CHANNEL_ID,
     dict.channelOrder({
       action: isSell ? dict.actionSell : dict.actionBuy,
+      chain: SettlementMethodLabel[order.settlementMethod]!,
       amountFiat: formatFiatAmount(order.amountFiat),
       fiat: order.fiatCode,
       payDirection: isSell ? dict.payDirectionSell : dict.payDirectionBuy,

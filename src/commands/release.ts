@@ -158,6 +158,7 @@ export async function doFundsRelease(
           {
             id: newOrderId,
             type: order.type,
+            settlementMethod: order.settlementMethod,
             fiatCode: order.fiatCode,
             amountFiat: newAmountFiat,
             paymentMethod: order.paymentMethod,

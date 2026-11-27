@@ -78,6 +78,7 @@ export default {
   promptFiat: "What FIAT currency do you want to use? (Ex: USD, EUR, VES)",
   promptAmount: "Indicate the amount or range (Ex: 50-1000 or 100)",
   promptMargin: "Select the margin using the buttons below 👇",
+  promptSelectSettlementMethod: "Select the network you want to use",
   promptPaymentMethod: "Type the payment method (Ex: Zelle, Bank Transfer)",
   invalidAmountAfterMargin: ({
     margin,
@@ -94,7 +95,29 @@ export default {
     `After applying your ${margin}% margin, the total to receive dropped to ${satsAmount.toLocaleString()} sats.\n\n` +
     `To meet the minimum of ${MIN_SATS.toLocaleString()} sats, you must start the order with at least *$${minFiatRequired} ${fiatCode}*.\n\n` +
     `🔄 Please start the order creation again.`,
+  lightningAmountAboveMaximum: (
+    fiatCode: string,
+    maxFiat: number,
+    maxSats: number,
+  ) =>
+    `❌ The maximum amount for Lightning orders is *$${maxFiat.toLocaleString("de-DE")} ${fiatCode}* (${maxSats.toLocaleString()} sats).\nTry again:`,
+  lightningAmountAboveMaximumAfterMargin: ({
+    margin,
+    maxFiatRequired,
+    maxSats,
+    fiatCode,
+  }: {
+    margin: number;
+    maxFiatRequired: string;
+    maxSats: number;
+    fiatCode: string;
+  }) =>
+    `⚠️ *Amount above the maximum after applying margin*\n\n` +
+    `After applying your ${margin}% margin, the order exceeds the maximum of ${maxSats.toLocaleString()} sats allowed for Lightning.\n\n` +
+    `The maximum allowed amount is *$${maxFiatRequired} ${fiatCode}*.\n\n` +
+    `🔄 Please start the order creation again.`,
   wizardPreview: (
+    chain: string,
     type: string,
     fiat: string,
     amount: string,
@@ -103,6 +126,7 @@ export default {
     prompt: string,
   ) => {
     const lines = [`🔧 *Creating listing · ${type} BTC*`];
+    if (chain) lines.push("Network: " + chain);
     if (fiat) lines.push(`FIAT currency: ${fiat} ${getFiatEmoji(fiat)}`);
     if (amount && amount !== "0") lines.push(`Amount: ${amount} ${fiat}`);
     if (margin)
@@ -117,6 +141,7 @@ export default {
   },
   wizardFinishedPrompt: "Order creation process finished.",
   channelOrder: ({
+    chain,
     action,
     amountFiat,
     fiat,
@@ -127,6 +152,7 @@ export default {
     ratingLabel,
     id,
   }: {
+    chain: string;
     action: string;
     amountFiat: string;
     fiat: string;
@@ -140,6 +166,7 @@ export default {
     `*${action} BTC*\n\n` +
     `For ${amountFiat} · ${fiat} ${getFiatEmoji(fiat)}\n` +
     `${payDirection} ${method}\n\n` +
+    `Network: ${chain}\n\n` +
     `${margin === 0 ? "At market price" : `*${margin > 0 ? "+" : ""}${margin} %* over market price`}\n\n` +
     `${daysUsing} days · ${ratingLabel}\n` +
     `ID: \`${id}\``,
@@ -595,6 +622,8 @@ export default {
     `❌ Incorrect password. Please try again with \`${retryCommand}\``,
   invalidAmountRange: (min: number, max: number) =>
     `❌ The amount is invalid. It must be a number between **${min}** and **${max}**.\nTry again:`,
+  invalidAmountRangeOrder:
+    "❌ The minimum amount cannot be greater than the maximum amount.\nTry again:",
   fiatValueBelowMinimun: (fiatCode: string, minValue: number) =>
     `❌ The amount for ${fiatCode} must be at least ${minValue}. Try again:`,
   fiatValueTooBig: "❌ Amount is too big and can't be processed.",

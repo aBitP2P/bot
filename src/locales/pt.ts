@@ -80,6 +80,7 @@ export default {
   promptFiat: "Qual moeda FIAT você deseja usar? (Ex.: USD, EUR, BRL)",
   promptAmount: "Informe o valor ou intervalo (ex.: 500-1000 ou 100)",
   promptMargin: "Selecione a margem nos botões abaixo 👇",
+  promptSelectSettlementMethod: "Selecione a rede que deseja usar",
   promptPaymentMethod: "Digite o método de pagamento (ex.: Pix, transferência)",
   invalidAmountAfterMargin: ({
     margin,
@@ -96,7 +97,29 @@ export default {
     `Após aplicar sua margem de ${margin}%, o total a receber caiu para ${satsAmount.toLocaleString()} sats.\n\n` +
     `Para cumprir o mínimo de ${MIN_SATS.toLocaleString()} sats, você precisa iniciar a ordem com pelo menos *$${minFiatRequired} ${fiatCode}*.\n\n` +
     `🔄 Inicie novamente a criação da ordem.`,
+  lightningAmountAboveMaximum: (
+    fiatCode: string,
+    maxFiat: number,
+    maxSats: number,
+  ) =>
+    `❌ O valor máximo para ordens Lightning é *$${maxFiat.toLocaleString("de-DE")} ${fiatCode}* (${maxSats.toLocaleString()} sats).\nTente novamente:`,
+  lightningAmountAboveMaximumAfterMargin: ({
+    margin,
+    maxFiatRequired,
+    maxSats,
+    fiatCode,
+  }: {
+    margin: number;
+    maxFiatRequired: string;
+    maxSats: number;
+    fiatCode: string;
+  }) =>
+    `⚠️ *Valor acima do máximo após aplicar a margem*\n\n` +
+    `Após aplicar sua margem de ${margin}%, a ordem supera o máximo de ${maxSats.toLocaleString()} sats permitido para Lightning.\n\n` +
+    `O valor máximo permitido é *$${maxFiatRequired} ${fiatCode}*.\n\n` +
+    `🔄 Inicie novamente a criação da ordem.`,
   wizardPreview: (
+    chain: string,
     type: string,
     fiat: string,
     amount: string,
@@ -105,6 +128,7 @@ export default {
     prompt: string,
   ) => {
     const lines = [`🔧 *Criando anúncio · ${type} BTC*`];
+    if (chain) lines.push("Rede: " + chain);
     if (fiat) lines.push(`Moeda FIAT: ${fiat} ${getFiatEmoji(fiat)}`);
     if (amount && amount !== "0") lines.push(`Valor: ${amount} ${fiat}`);
     if (margin)
@@ -119,6 +143,7 @@ export default {
   },
   wizardFinishedPrompt: "Processo de criação finalizado.",
   channelOrder: ({
+    chain,
     action,
     amountFiat,
     fiat,
@@ -129,6 +154,7 @@ export default {
     ratingLabel,
     id,
   }: {
+    chain: string;
     action: string;
     amountFiat: string;
     fiat: string;
@@ -142,6 +168,7 @@ export default {
     `*${action} BTC*\n\n` +
     `Por ${amountFiat} · ${fiat} ${getFiatEmoji(fiat)}\n` +
     `${payDirection} ${method}\n\n` +
+    `Rede: ${chain}\n\n` +
     `${margin === 0 ? "A preço de mercado" : `*${margin > 0 ? "+" : ""}${margin} %* sobre o preço de mercado`}\n\n` +
     `${daysUsing} dias · ${ratingLabel}\n` +
     `ID: \`${id}\``,
@@ -599,6 +626,8 @@ export default {
     `❌ Senha incorreta. Tente novamente usando \`${retryCommand}\``,
   invalidAmountRange: (min: number, max: number) =>
     `❌ O valor é inválido. Deve ser um número entre **${min}** e **${max}**.\nTente novamente:`,
+  invalidAmountRangeOrder:
+    "❌ O valor mínimo não pode ser maior que o valor máximo.\nTente novamente:",
   fiatValueBelowMinimun: (fiatCode: string, minValue: number) =>
     `❌ O valor para ${fiatCode} deve ser de pelo menos ${minValue}. Tente novamente:`,
   fiatValueTooBig:

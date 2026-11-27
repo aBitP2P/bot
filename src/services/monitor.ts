@@ -9,7 +9,7 @@ import {
   type UserRecord,
 } from "../types.js";
 import { getUser } from "../db/users.js";
-import { tryTransitionOrderStatus } from "../db/orders.js";
+import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
 import { escapeMarkdown } from "../utils/format.js";
 import { republishOrderSilently } from "../handlers/orderHandler.js";
 import { getParties } from "../utils/order.js";
@@ -19,6 +19,7 @@ import { getSellerDepositSats } from "../config/fees.js";
 import { removeOrderFromChannel } from "../services/orderPublisher.js";
 import { watchHoldInvoice } from "../core/lightning/listeners.js";
 import { SettlementMethodType, TERMINAL_STATUSES } from "../shared/constants.js";
+import { cancelHoldInvoiceForOrder } from "../core/lightning/settlement.js";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
@@ -418,7 +419,16 @@ async function handleEscrowTimeouts(bot: Bot, updatedBefore: number) {
   );
 
   for (const order of escrowTimeouts) {
-    const funding = await checkEscrowFunding(order.escrowAddress!);
+    if (order.settlementMethod === SettlementMethodType.Lightning) {
+      await cancelExpiredEscrow({
+        bot,
+        order,
+      });
+      continue;
+    }
+
+    if (!order.escrowAddress) continue;
+    const funding = await checkEscrowFunding(order.escrowAddress);
 
     if (funding && funding.totalFundedSats > 0) {
       const { sellerId, buyerId } = getParties(order);
@@ -448,26 +458,44 @@ export async function cancelExpiredEscrow({
   order: OrderRecord;
   bot: BotContext | Bot;
 }) {
+  if (order.settlementMethod === SettlementMethodType.Lightning) {
+    const holdCancelResult = await cancelHoldInvoiceForOrder(order.id);
+    if (!holdCancelResult.ok) {
+      console.error(
+        `[lightning] timeout: no se pudo cancelar el hold ${order.id}: ${holdCancelResult.reason}`,
+        holdCancelResult.cause ?? "",
+      );
+      return; // no transicionar; se reintenta el próximo ciclo
+    }
+  }
+
   if (order.type === "SELL") {
     const didCancel = await tryTransitionOrderStatus(
       order.id,
       [OrderStatus.WaitingEscrow],
       OrderStatus.Cancelled,
     );
-    if (didCancel) {
-      await notifyUser(bot, order.creatorId, (d) =>
-        d.makerTimeoutNotifyMaker(order.id),
-      );
-      await notifyUser(bot, order.takerId!, (d) =>
-        d.makerTimeoutNotifyTaker(order.id),
-      );
+    if (!didCancel) {
+      // El listener onCanceled pudo haberla cancelado ya.
+      const fresh = await getOrder(order.id);
+      if (fresh?.status !== OrderStatus.Cancelled) return;
+      return;
     }
+    await notifyUser(bot, order.creatorId, (d) =>
+      d.makerTimeoutNotifyMaker(order.id),
+    );
+    await notifyUser(bot, order.takerId!, (d) =>
+      d.makerTimeoutNotifyTaker(order.id),
+    );
     return;
   }
 
   const takerIdToNotify = order.takerId;
+  // La cancelación de la factura puede disparar onCanceled del listener
+  // (CANCELLED) antes del republish; se acepta republish desde CANCELLED.
   const republished = await republishOrderSilently(bot as Bot, order.id, [
     OrderStatus.WaitingEscrow,
+    OrderStatus.Cancelled,
   ]);
 
   if (republished) {

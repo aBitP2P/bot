@@ -6,12 +6,13 @@ import {
 import { notifyUser } from "../utils/telegram.js";
 import type { CallbackContext, CommandContext } from "../types.js";
 import { handleOrderCancelledRepublish } from "../handlers/orderHandler.js";
-import { OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
+import { OrderStatus, SettlementMethodType, TERMINAL_STATUSES } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { checkEscrowFunding } from "../core/bitcoin/transactions.js";
 import { getParties } from "../utils/order.js";
 import { getSellerDepositSats } from "../config/fees.js";
 import { removeOrderFromChannel } from "../services/orderPublisher.js";
+import { cancelHoldInvoiceForOrder, mapLightningSettlementError } from "../core/lightning/settlement.js";
 
 
 export async function cancelCommand(ctx: CommandContext) {
@@ -101,12 +102,28 @@ export async function handleOrderCancelFromCommand(
         }
       }
 
+      if (order.settlementMethod === SettlementMethodType.Lightning) {
+        const holdCancelResult = await cancelHoldInvoiceForOrder(orderId);
+        if (!holdCancelResult.ok) {
+          return ctx.reply(
+            mapLightningSettlementError(dict, holdCancelResult.reason),
+            { parse_mode: "Markdown" },
+          );
+        }
+      }
+
       const didCancel = await tryTransitionOrderStatus(
         orderId,
         [OrderStatus.WaitingEscrow],
         OrderStatus.Cancelled,
       );
-      if (!didCancel) return ctx.reply(dict.cancelNotAllowed);
+      if (!didCancel) {
+        // El listener onCanceled pudo haberla cancelado ya.
+        const fresh = await getOrder(orderId);
+        if (fresh?.status !== OrderStatus.Cancelled)
+          return ctx.reply(dict.cancelNotAllowed);
+        return;
+      }
 
       if (counterpartyId) {
         await notifyUser(ctx, counterpartyId, (d) =>

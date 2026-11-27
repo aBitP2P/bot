@@ -9,7 +9,7 @@ import {
 import { getOrder, tryTransitionOrderStatus } from "../../db/orders.js";
 import { getBuyerNetSats } from "../../config/fees.js";
 import { OrderStatus, SettlementMethodType } from "../../shared/constants.js";
-import type { OrderRecord } from "../../types.js";
+import type { Dictionary, OrderRecord } from "../../types.js";
 import { decryptData } from "../../utils/crypto.js";
 import { lnd } from "./client.js";
 import { resolvePayoutRequest } from "./invoices.js";
@@ -265,10 +265,12 @@ export async function settleOrderToBuyer(
 }
 
 /**
- * Cancela el hold invoice para devolver los fondos al vendedor.
- * Pasa la orden de REFUNDABLE a REFUNDED. No lanza por fallos de negocio.
+ * Cancela el hold invoice de una orden. Es idempotente y NO altera el estado
+ * de la orden: quien llama decide si después pasa a CANCELLED o a REFUNDED.
+ * Devuelve `{ ok: true }` si no había factura que cancelar (la orden aún no
+ * llegó a tener hold invoice).
  */
-export async function refundOrderToSeller(
+export async function cancelHoldInvoiceForOrder(
   orderId: string,
 ): Promise<RefundOrderResult> {
   if (inFlight.has(orderId)) return failure("in-progress");
@@ -280,44 +282,83 @@ export async function refundOrderToSeller(
     if (order.settlementMethod !== SettlementMethodType.Lightning) {
       return failure("wrong-settlement-method");
     }
-    if (
-      order.status === OrderStatus.Refunded ||
-      order.status === OrderStatus.ExternallyRefunded ||
-      order.status === OrderStatus.Cancelled
-    ) {
-      return failure("already-processed");
-    }
-    if (order.status !== OrderStatus.Refundable) {
-      return failure("invalid-status");
-    }
 
     const hash = order.holdInvoiceHash;
-    if (!hash) return failure("missing-hold-invoice");
+    if (!hash) return { ok: true };
 
-    const canceled = await cancelHeldInvoice(hash);
-    if (!canceled.ok) return canceled;
-
-    const didTransition = await tryTransitionOrderStatus(
-      order.id,
-      [OrderStatus.Refundable],
-      OrderStatus.Refunded,
-    );
-
-    if (!didTransition) {
-      const current = await getOrder(order.id).catch(() => null);
-      const alreadyRefunded =
-        current?.status === OrderStatus.Refunded ||
-        current?.status === OrderStatus.ExternallyRefunded ||
-        current?.status === OrderStatus.Cancelled;
-      if (!alreadyRefunded) {
-        console.error(
-          `[lightning] Hold invoice ${hash} cancelado pero la orden ${order.id} no pasó a REFUNDED (status actual: ${current?.status})`,
-        );
-      }
-    }
-
-    return { ok: true };
+    return await cancelHeldInvoice(hash);
   } finally {
     inFlight.delete(orderId);
+  }
+}
+
+/**
+ * Reembolso al vendedor de una orden REFUNDABLE: cancela el hold invoice y
+ * pasa la orden a REFUNDED. No lanza por fallos de negocio.
+ */
+export async function refundOrderToSeller(
+  orderId: string,
+): Promise<RefundOrderResult> {
+  const order = await getOrder(orderId);
+  if (!order) return failure("order-not-found");
+  if (order.settlementMethod !== SettlementMethodType.Lightning) {
+    return failure("wrong-settlement-method");
+  }
+  if (
+    order.status === OrderStatus.Refunded ||
+    order.status === OrderStatus.ExternallyRefunded
+  ) {
+    return failure("already-processed");
+  }
+  if (order.status !== OrderStatus.Refundable) {
+    return failure("invalid-status");
+  }
+  if (!order.holdInvoiceHash) return failure("missing-hold-invoice");
+
+  const canceled = await cancelHoldInvoiceForOrder(orderId);
+  if (!canceled.ok) return canceled;
+
+  const didTransition = await tryTransitionOrderStatus(
+    order.id,
+    [OrderStatus.Refundable],
+    OrderStatus.Refunded,
+  );
+
+  if (!didTransition) {
+    const current = await getOrder(order.id).catch(() => null);
+    const alreadyRefunded =
+      current?.status === OrderStatus.Refunded ||
+      current?.status === OrderStatus.ExternallyRefunded;
+    if (!alreadyRefunded) {
+      return failure(
+        "invalid-status",
+        new Error(
+          `Hold invoice cancelado pero la orden ${order.id} no pasó a REFUNDED (status actual: ${current?.status})`,
+        ),
+      );
+    }
+  }
+
+  return { ok: true };
+}
+
+export function mapLightningSettlementError(
+  dict: Dictionary,
+  reason: LightningSettlementReason,
+): string {
+  switch (reason) {
+    case "in-progress":
+      return dict.lightningInProgress;
+    case "already-processed":
+      return dict.lightningAlreadyProcessed;
+    case "invoice-expired":
+    case "missing-payout-invoice":
+      return dict.lightningInvoiceExpired;
+    case "invalid-status":
+    case "order-not-found":
+    case "wrong-settlement-method":
+      return dict.invalidOrderStatus;
+    default:
+      return dict.lightningPaymentFailed;
   }
 }

@@ -1,5 +1,5 @@
 import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
-import type { BotContext, CallbackContext, CommandContext, Dictionary, OrderRecord } from "../types.js";
+import type { BotContext, CallbackContext, CommandContext, OrderRecord } from "../types.js";
 import { getLiveMinerFee, checkEscrowFunding, DUST_LIMIT, findSpendingTxid } from "../core/bitcoin/index.js";
 import { orders } from "../db/schema.js";
 import { db } from "../db/index.js";
@@ -10,9 +10,9 @@ import { getParties } from "../utils/order.js";
 import { notifyUser, safeDeleteMsg } from "../utils/telegram.js";
 import { getBuyerNetSats, getPartyFeeSats } from "../config/fees.js";
 import {
+  mapLightningSettlementError,
   refundOrderToSeller,
   settleOrderToBuyer,
-  type LightningSettlementReason,
 } from "../core/lightning/settlement.js";
 import { Markup } from "telegraf";
 
@@ -153,27 +153,6 @@ export async function startClaimPasswordFlow(
     ]),
   },
 );
-}
-
-function mapLightningSettlementError(
-  dict: Dictionary,
-  reason: LightningSettlementReason,
-): string {
-  switch (reason) {
-    case "in-progress":
-      return dict.lightningInProgress;
-    case "already-processed":
-      return dict.lightningAlreadyProcessed;
-    case "invoice-expired":
-    case "missing-payout-invoice":
-      return dict.lightningInvoiceExpired;
-    case "invalid-status":
-    case "order-not-found":
-    case "wrong-settlement-method":
-      return dict.invalidOrderStatus;
-    default:
-      return dict.lightningPaymentFailed;
-  }
 }
 
 /**

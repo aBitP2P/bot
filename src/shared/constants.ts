@@ -22,6 +22,20 @@ export const OrderStatus = {
   Cancelled: "CANCELLED",
 } as const;
 
+export const SettlementMethodType = {
+  OnChain: "ON_CHAIN",
+  Lightning: "LIGHTNING"
+}
+
+/** Etiqueta visual por red. Es igual en todos los idiomas. */
+export const SettlementMethodLabel: Record<string, string> = {
+  [SettlementMethodType.OnChain]: "⛓️ On-Chain",
+  [SettlementMethodType.Lightning]: "⚡ Lightning",
+};
+
+export const getSettlementMethodLabel = (method?: string | null) =>
+  (method && SettlementMethodLabel[method]) || "";
+
 export const TERMINAL_STATUSES = [
   OrderStatus.Releasable,
   OrderStatus.Refundable,

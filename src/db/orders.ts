@@ -1,8 +1,22 @@
-import { and, eq, inArray, isNotNull, ne, notInArray, or, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notInArray,
+  or,
+  type SQL,
+} from "drizzle-orm";
 import { db } from "./index.js";
 import { orders } from "./schema.js";
 import type { ResultSetHeader } from "mysql2";
-import { OrderStatus, TERMINAL_STATUSES } from "../shared/constants.js";
+import {
+  OrderStatus,
+  SettlementMethodType,
+  TERMINAL_STATUSES,
+} from "../shared/constants.js";
 
 export async function createOrder(orderData: typeof orders.$inferInsert) {
   return await db.insert(orders).values(orderData);
@@ -32,9 +46,14 @@ export async function getUserOrders(
           OrderStatus.Cancelled,
           OrderStatus.Refunded,
           OrderStatus.ExternallyCompleted,
-          OrderStatus.ExternallyRefunded
+          OrderStatus.ExternallyRefunded,
         ]),
-        !(options?.forBackup) ? or(ne(orders.status, OrderStatus.Pending), eq(orders.creatorId, userId)) : undefined,
+        !options?.forBackup
+          ? or(
+              ne(orders.status, OrderStatus.Pending),
+              eq(orders.creatorId, userId),
+            )
+          : undefined,
         options?.forBackup ? isNotNull(orders.escrowAddress) : undefined,
       ),
     );
@@ -129,6 +148,13 @@ export async function setBuyerAddress(orderId: string, address: string) {
     .where(eq(orders.id, orderId));
 }
 
+export async function setPayoutInvoice(orderId: string, invoice: string) {
+  await db
+    .update(orders)
+    .set({ payoutInvoice: invoice })
+    .where(eq(orders.id, orderId));
+}
+
 export async function setRefundAddress(orderId: string, address: string) {
   await db
     .update(orders)
@@ -147,10 +173,29 @@ export async function setEscrowData(
   orderId: string,
   data: Pick<
     typeof orders.$inferInsert,
-    "buyerXpub" | "sellerXpub" | "escrowIndex" | "escrowAddress" | "witnessScript"
+    | "buyerXpub"
+    | "sellerXpub"
+    | "escrowIndex"
+    | "escrowAddress"
+    | "witnessScript"
   >,
 ) {
   await db.update(orders).set(data).where(eq(orders.id, orderId));
+}
+
+export async function setHodlInvoiceData(
+  orderId: string,
+  data: Pick<
+    typeof orders.$inferSelect,
+    "holdInvoiceHash" | "holdInvoiceRequest" | "holdInvoicePreimageEncrypted"
+  >,
+) {
+  const didUpdate = await tryConditionalUpdate(
+    orderId,
+    and(eq(orders.settlementMethod, SettlementMethodType.Lightning), isNull(orders.holdInvoicePreimageEncrypted)),
+    data,
+  ); // Se asegura de que no se vaya a cambiar la factura hold de una órden que ya tenga una establecida.
+  return didUpdate;
 }
 
 /** Invalida el PSBT externo de las órdenes liberables/reembolsables del usuario (tras cambiar la comisión). */
@@ -160,7 +205,10 @@ export async function clearExternalPsbtsForUser(userId: number) {
     .set({ externalPsbt: null })
     .where(
       and(
-        inArray(orders.status, [OrderStatus.Releasable, OrderStatus.Refundable]),
+        inArray(orders.status, [
+          OrderStatus.Releasable,
+          OrderStatus.Refundable,
+        ]),
         or(eq(orders.creatorId, userId), eq(orders.takerId, userId)),
       ),
     );

@@ -1,5 +1,5 @@
 import { mysqlTable, varchar, text, int, bigint, double, index, uniqueIndex } from "drizzle-orm/mysql-core";
-import { OrderStatus } from "../shared/constants.js";
+import { OrderStatus, SettlementMethodType } from "../shared/constants.js";
 
 export const users = mysqlTable("users", {
   telegramId: bigint("telegram_id", { mode: "number" }).primaryKey(),
@@ -50,6 +50,13 @@ export const orders = mysqlTable("orders", {
   witnessScript: text("witness_script"),
   payoutTxid: varchar("payout_txid", { length: 128 }),
   externalPsbt: text("external_psbt"),
+
+  settlementMethod: varchar("settlement_method", { length: 16 }).notNull().default(SettlementMethodType.OnChain),
+
+  holdInvoiceHash: varchar("hold_invoice_hash", { length: 64 }), 
+  holdInvoiceRequest: text("hold_invoice_request"),              
+  holdInvoicePreimageEncrypted: text("hold_invoice_preimage_enc"),    
+  payoutInvoice: text("payout_invoice"),
 
   createdAt: bigint("created_at", { mode: "number" }).notNull().$defaultFn(() => Date.now()),
   updatedAt: bigint("updated_at", { mode: "number" }).notNull().$defaultFn(() => Date.now())

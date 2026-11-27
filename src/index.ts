@@ -1,7 +1,11 @@
 import "dotenv/config";
 import { Telegraf, session } from "telegraf";
 import { type BotContext, type SessionData } from "./types.js";
-import { startEscrowMonitor, startOrderTimeoutsMonitor } from "./services/monitor.js";
+import {
+  resumeHoldInvoiceWatches,
+  startEscrowMonitor,
+  startOrderTimeoutsMonitor,
+} from "./services/monitor.js";
 import { userMiddleware } from "./middlewares/auth.js";
 import { Strings } from "./shared/constants.js";
 import { resetSession } from "./utils/session.js";
@@ -9,6 +13,7 @@ import { registerCommands } from "./bot/commands.js";
 import { registerCallbacks } from "./bot/callbacks.js";
 import { registerClaimActions } from "./bot/claimActions.js";
 import { registerTextHandler } from "./bot/textHandler.js";
+import { testLndConnection } from "./core/lightning/client.js";
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
@@ -58,6 +63,10 @@ bot.catch((err, ctx) => {
 
 startEscrowMonitor(bot);
 startOrderTimeoutsMonitor(bot);
+testLndConnection();
+resumeHoldInvoiceWatches(bot).catch((err) =>
+  console.error("Error al reanudar los hold invoice:", err),
+);
 bot.launch();
 
 process.once("SIGINT", () => bot.stop("SIGINT"));

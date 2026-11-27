@@ -54,6 +54,10 @@ export default {
     "❌ **Nome de usuário obrigatório**\n\nVocê precisa configurar um @username do Telegram para interagir com este bot. Acesse *Configurações > Nome de usuário*, configure-o e tente novamente.",
   setYourPersonalPassword:
     "❌ Primeiro, você precisa definir sua senha usando /setpass para poder aceitar ou criar ordens.",
+  onChainRequiresPassword:
+    "🔐 *Você precisa criar uma senha para usar ordens On-chain.*\n\nA criação da ordem foi cancelada. Defina sua senha com /setpass e tente criar a ordem novamente com /buy ou /sell.\n\n_Ordens Lightning não exigem senha._",
+  onChainTakeRequiresPassword:
+    "🔐 *Você precisa criar uma senha para aceitar ordens On-chain.*\n\nDefina sua senha com /setpass e tente aceitar a ordem novamente.\n\n_Ordens Lightning não exigem senha._",
   promptPassword:
     `*⚠️ Será gerada uma frase de 12 palavras vinculada ao seu usuário; a senha SERÁ NECESSÁRIA para resgatar as ordens.*\n` +
     `*Certifique-se de que a senha seja segura* e guarde-a em um lugar seguro.\n\n` +

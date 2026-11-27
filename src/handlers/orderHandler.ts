@@ -115,18 +115,19 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
   if (!takerId) return;
   const user = ctx.user;
   const dict = ctx.dict;
-  if (!user?.xpub) {
-    await ctx.telegram.sendMessage(takerId, dict.setYourPersonalPassword, {
-      parse_mode: "Markdown",
-    });
-    return ctx.answerCbQuery();
-  }
   const order = await getOrder(orderId);
 
   if (!order)
     return ctx.answerCbQuery(dict.orderNotFound, { show_alert: true });
   if (order.creatorId === takerId)
     return ctx.answerCbQuery(dict.cantTakeOwnOrder, { show_alert: true });
+
+  if (order.settlementMethod === SettlementMethodType.OnChain && !user?.xpub) {
+    await ctx.telegram.sendMessage(takerId, dict.onChainTakeRequiresPassword, {
+      parse_mode: "Markdown",
+    });
+    return ctx.answerCbQuery();
+  }
 
   const activeOrders = await getUserOrders(takerId);
   const isBusy = activeOrders.some((o) => o.takerId === takerId);

@@ -73,8 +73,6 @@ function getWizardPreviewText(
 export async function startOrderWizard(ctx: CommandContext, type: OrderType) {
   const userId = ctx.from.id;
   if (!userId) return;
-  if (!ctx.user.encryptedMnemonic)
-    return ctx.reply(ctx.dict.setYourPersonalPassword);
   let orderList = await getOrdersCreatedBy(userId);
   if (orderList.length >= 6) return await ctx.reply(ctx.dict.maxOrdersReached);
 
@@ -330,6 +328,17 @@ export async function handleWizardAction(ctx: BotContext) {
       chain === "bitcoin"
         ? SettlementMethodType.OnChain
         : SettlementMethodType.Lightning;
+
+    if (
+      ctx.session.draft.settlementMethod === SettlementMethodType.OnChain &&
+      !ctx.user.encryptedMnemonic
+    ) {
+      await safeDeleteMsg(ctx);
+      resetSession(ctx);
+      await ctx.reply(ctx.dict.onChainRequiresPassword, { parse_mode: "Markdown" });
+      return;
+    }
+
     ctx.session.step = "WAITING_FIAT"
     await updatePreview();
     return;

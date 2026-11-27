@@ -53,6 +53,10 @@ export default {
     "❌ **Username required**\n\nYou need to set up a Telegram @username to interact with this bot. Go to *Settings > Username*, set it up, and try again.",
   setYourPersonalPassword:
     "❌ You must first set your password with /setpass to take or create orders.",
+  onChainRequiresPassword:
+    "🔐 *You need to create a password to use On-chain orders.*\n\nThe order creation was cancelled. Set your password with /setpass and try creating the order again with /buy or /sell.\n\n_Lightning orders do not require a password._",
+  onChainTakeRequiresPassword:
+    "🔐 *You need to create a password to take On-chain orders.*\n\nSet your password with /setpass and try taking the order again.\n\n_Lightning orders do not require a password._",
   promptPassword:
     `*⚠️ A 12-word recovery phrase linked to your account will be generated; your password WILL BE REQUIRED to claim orders.*\n` +
     `*Make sure your password is strong* and keep it in a safe place.\n\n` +

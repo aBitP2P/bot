@@ -4,6 +4,7 @@ import { getOrder } from "../db/orders.js";
 import { orderRatings, users } from "../db/schema.js";
 import type { CallbackContext } from "../types.js";
 import crypto from "node:crypto";
+import { OrderStatus } from "../shared/constants.js";
 
 export async function handleRating(
   ctx: CallbackContext,
@@ -22,6 +23,9 @@ export async function handleRating(
     return ctx.answerCbQuery(ctx.dict.orderNotFound, { show_alert: true });
   if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
     return ctx.answerCbQuery(ctx.dict.unauthorizedAccess, { show_alert: true });
+  }
+  if (![OrderStatus.Releasable, OrderStatus.Completed, OrderStatus.ExternallyCompleted].includes(order.status as any)) {
+    return ctx.answerCbQuery(ctx.dict.invalidOrderStatus);
   }
   const isCreator = order.creatorId === raterId;
   const isTaker = order.takerId === raterId;

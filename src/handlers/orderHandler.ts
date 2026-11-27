@@ -342,7 +342,6 @@ export async function handleMakerConfirm(
 
     await requestBuyerPayoutDetails(ctx, order, estimatedSats);
   } else {
-    await notifyUser(ctx, order.takerId!, (d) => d.acceptedNowWaitingEscrow);
     const didTransition = await tryTransitionOrderStatus(
       orderId,
       [OrderStatus.WaitingMakerConfirmation],
@@ -350,6 +349,7 @@ export async function handleMakerConfirm(
     );
 
     if (didTransition) {
+      await notifyUser(ctx, order.takerId!, (d) => d.acceptedNowWaitingEscrow);
       await initializeEscrow(ctx, orderId);
     }
   }

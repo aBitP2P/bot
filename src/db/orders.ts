@@ -168,7 +168,7 @@ export async function setChannelMessageId(orderId: string, messageId: number) {
 export async function setBuyerAddress(orderId: string, address: string) {
   await db
     .update(orders)
-    .set({ buyerAddress: address })
+    .set({ buyerAddress: address, externalPsbt: null })
     .where(eq(orders.id, orderId));
 }
 

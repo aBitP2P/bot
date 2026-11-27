@@ -400,8 +400,6 @@ export async function handleWizardAction(ctx: BotContext) {
     ctx.session.draft.margin = margin;
     ctx.session.step = "WAITING_PAYMENT_METHOD";
 
-    await ctx.answerCbQuery();
-
     await updatePreview();
   } catch (error) {
     console.error("Error validando el margen:", error);

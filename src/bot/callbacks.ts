@@ -39,7 +39,11 @@ const routes: Array<[string, Handler]> = [
   ["take_order_", (ctx, id) => handleTakeOrder(ctx, id)],
   ["taker_yes_", (ctx, id) => handleTakerConfirm(ctx, id)],
   ["maker_yes_", (ctx, id) => handleMakerConfirm(ctx, id)],
-  ["taker_cancel_order_", (ctx, id) => handleOrderCancelledRepublish(ctx, id)],
+  ["taker_cancel_order_", async (ctx, id) => {
+    let order = await getOrder(id);
+    if (order?.takerId !== ctx.user.telegramId) return;
+    await handleOrderCancelledRepublish(ctx, id)
+  }],
   ["setlang_", (ctx) => handleSetLangAction(ctx)],
   [
     "cancelCommand_",
@@ -80,6 +84,7 @@ const routes: Array<[string, Handler]> = [
 async function makerDeny(ctx: CallbackContext, orderId: string) {
   const order = await getOrder(orderId);
   if (!order) return;
+  if (order.creatorId !== ctx.user.telegramId) return;
 
   const didCancel = await tryTransitionOrderStatus(
     orderId,

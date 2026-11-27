@@ -42,6 +42,10 @@ export function watchHoldInvoice(
 
   sub.on("error", (err) => {
     console.error("No se pudo suscribir a los estados del hold invoice", hash, err);
+    stop();
+    setTimeout(() => {
+      watchHoldInvoice(order, hash, onHeld, onCanceled);
+    }, 5_000);
   });
 
   return sub;

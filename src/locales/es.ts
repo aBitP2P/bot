@@ -20,6 +20,7 @@ export default {
     `/fiatsent — Notificar pago enviado\n` +
     `/release — Liberar fondos al comprador\n` +
     `/claim — Reclamar fondos o reembolso\n` +
+    `/setaddress — Actualizar factura Lightning de cobro\n` +
     `/cancel — Cancelar una orden\n` +
     `/dispute — Abrir disputa con moderación\n` +
     `_Ej: /release ab12cd-34ef56_\n\n` +

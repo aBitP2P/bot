@@ -20,6 +20,7 @@ export default {
     `/fiatsent — Notify payment sent\n` +
     `/release — Release funds to the buyer\n` +
     `/claim — Claim funds or refund\n` +
+    `/setaddress — Update Lightning payout invoice\n` +
     `/cancel — Cancel an order\n` +
     `/dispute — Open dispute with moderation\n` +
     `_Ex: /release ab12cd-34ef56_\n\n` +

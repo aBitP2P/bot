@@ -1,12 +1,13 @@
 # ⚡ aBitP2P — Non-Custodial Bitcoin P2P Telegram Bot
 
-**aBitP2P** es un bot de Telegram diseñado para facilitar el intercambio peer-to-peer (P2P) de Bitcoin de forma **no custodial** mediante contratos multifirma On-Chain (2-de-3 P2WSH Escrow) y resolución descentralizada de disputas.
+**aBitP2P** es un bot de Telegram diseñado para facilitar el intercambio peer-to-peer (P2P) de Bitcoin de forma **no custodial** mediante contratos multifirma On-Chain (escrow **2-de-3** P2WSH: cualquier 2 de las 3 claves —comprador, vendedor y bot—), liquidaciones Lightning con hold invoices, y resolución descentralizada de disputas.
 
 ---
 
 ## 🚀 Características Principales
 
-- **No Custodial / 2-de-3 Escrow (P2WSH):** Las transacciones se bloquean en un script multifirma (Comprador + Vendedor + Bot).
+- **No Custodial / 2-de-3 Escrow (P2WSH):** Las transacciones se bloquean en un script multifirma que requiere **cualesquiera 2 de 3 firmas** (Comprador + Vendedor + Bot). El bot nunca puede mover los fondos por sí solo.
+- **Liquidación Lightning (hold invoices):** El vendedor fondea con una HTLC de Lightning y el comprador cobra con una factura BOLT11 o dirección Lightning (LNURL-pay). El bot liquida el hold y paga al comprador al reclamar (`/claim`); si la factura del comprador falla, puede actualizarla con `/setaddress`.
 - **Billetera determinista por usuario (BIP39/BIP84):** Al configurar su contraseña, cada usuario recibe **12 palabras** de recuperación. Solo se almacena el mnemónico cifrado junto con el `xpub` y el fingerprint de la cuenta; la llave privada nunca se guarda en texto plano.
 - **Derivación determinista del bot (BIP32):** La clave del bot para cada escrow se deriva de `BOT_MNEMONIC` usando un índice de derivación por par de usuarios, evitando la reutilización de direcciones de escrow.
 - **Firma externa (PSBT):** El usuario puede firmar su retiro por su cuenta, sin que el bot descifre su mnemónico, importando sus 12 palabras y el descriptor del escrow en una billetera compatible con PSBT.
@@ -67,6 +68,18 @@
 
 ---
 
+## ⚡ Liquidación Lightning
+
+Al crear una orden, el maker elige la red: **On-Chain** o **Lightning**.
+
+- El vendedor fondea con un **hold invoice** (HTLC) por el monto + su mitad de la comisión; si el hold se paga, la orden pasa a `ACTIVE`.
+- Al confirmar el pago fiat, la orden pasa a `RELEASABLE` (o `REFUNDABLE` si aplica). El comprador cobra con `/claim`, que liquida el hold hacia el vendedor/paga al comprador según corresponda.
+- Si la factura del comprador expiró o fue rechazada, puede actualizarla con `/setaddress` y volver a reclamar.
+- Cancelar o expirar una orden (`WAITING_ESCROW`) cancela el hold invoice abierto.
+- Las direcciones Lightning (LNURL-pay) se resuelven a una factura fresca en el momento de pagar.
+
+---
+
 ## 🖋️ Firma Externa (Modelo No Custodial)
 
 Además de firmar con su contraseña (el bot descifra el mnemónico en memoria únicamente para co-firmar), el usuario puede firmar el retiro **sin entregar su mnemónico al bot**:
@@ -109,9 +122,17 @@ BOT_FEE_XPUB=xpubxxxx
 
 # Base de datos
 DATABASE_URL="mysql://user:pass@host:3306/dbname?ssl={\"rejectUnauthorized\":true}"
+
+# Liquidación Lightning (opcional; requeridas si se usa la red Lightning)
+LND_CERT=""         # certificado TLS de LND en base64
+LND_MACAROON=""     # macaroon de LND en base64
+LND_SOCKET=""       # host:puerto de LND (ej. 127.0.0.1:10009)
+PREIMAGE_KEY=""     # clave para cifrar las preimágenes de los hold invoices (openssl rand -hex 32)
+LIGHTNING_MAX_SATS_AMOUNT=500000  # tope de sats por orden Lightning (0/ausente = sin límite)
+MAX_ROUTING_FEE=0.002             # ratio sobre el monto pagado que cubre el routing fee del payout (0.002 = 0.2%)
 ```
 
-Para configurar la comisión del bot, se debe de modificar el archivo ubicado en `src/config/fees.ts` (el porcentaje se divide entre ambas contrapartes).
+El bot valida al arrancar que las variables anteriores estén definidas y sale con error si falta alguna. La comisión del bot es plana (**0,6%** para cualquier monto, dividida 50/50 entre ambas contrapartes) y se define con `BOT_FEE_PERCENT` en `src/config/fees.ts`. El mínimo por orden es 100.000 sats on-chain y 1.000 sats Lightning (`ONCHAIN_MIN_SATS` / `MIN_SATS` en `src/utils/price.ts`).
 
 ---
 
@@ -167,7 +188,8 @@ Para configurar la comisión del bot, se debe de modificar el archivo ubicado en
 | `/listorders` | Muestra un listado de las órdenes activas del usuario. |
 | `/fiatsent <ID>` | Notifica que se ha enviado el pago en moneda FIAT. |
 | `/release <ID>` | El vendedor autoriza la liberación del Escrow tras recibir el pago. |
-| `/claim <ID>` | Retira los BTC del escrow firmando con la contraseña o externamente mediante PSBT. |
+| `/claim <ID>` | Retira los BTC del escrow firmando con la contraseña o externamente mediante PSBT. En órdenes Lightning, ejecuta la liquidación (settle/refund del hold + pago al comprador). |
+| `/setaddress <ID>` | Actualiza la factura/dirección Lightning de cobro del comprador en una orden liberable (`RELEASABLE`), por si la anterior expiró o fue rechazada. |
 | `/backup` | Muestra el descriptor del escrow y el índice de derivación para respaldar/importar la bóveda multifirma. |
 | `/cancel <ID>` | Cancela o solicita la cancelación mutua de una orden. |
 | `/dispute <ID>` | Abre una disputa formal para que un administrador intervenga. |

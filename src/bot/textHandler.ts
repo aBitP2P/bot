@@ -10,12 +10,15 @@ import {
   getOrder,
   setBuyerAddress,
   setFiatAmountLocked,
+  setPayoutInvoice,
   tryTransitionOrderStatus,
 } from "../db/orders.js";
 import { isValidAddress } from "../core/bitcoin/index.js";
 import { initializeEscrow } from "../handlers/escrowHandler.js";
+import { validateLightningPayout } from "../core/lightning/invoices.js";
+import { getBuyerNetSats } from "../config/fees.js";
 import { claimPasswordStep, setPassStep, claimRefundAddressStep } from "../steps/index.js";
-import { OrderStatus } from "../shared/constants.js";
+import { OrderStatus, SettlementMethodType } from "../shared/constants.js";
 
 export function registerTextHandler(bot: Telegraf<BotContext>) {
   bot.on(message("text"), async (ctx, next) => {
@@ -94,13 +97,47 @@ export function registerTextHandler(bot: Telegraf<BotContext>) {
         return next();
       }
 
-      if (!isValidAddress(address)) {
-        return ctx.reply(ctx.dict.invalidBuyerAddress, {
-          parse_mode: "Markdown",
-        });
+      const isLightning =
+        order.settlementMethod === SettlementMethodType.Lightning;
+
+      if (isLightning) {
+        const expectedSats = getBuyerNetSats(order.amountSats);
+        const validation = await validateLightningPayout(address, expectedSats);
+
+        if (!validation.ok) {
+          if (validation.reason === "amount") {
+            return ctx.reply(
+              ctx.dict.invalidBuyerInvoiceAmount(
+                validation.expectedSats!,
+                validation.receivedSats!,
+              ),
+              { parse_mode: "Markdown" },
+            );
+          }
+
+          if (validation.reason === "address-amount") {
+            return ctx.reply(
+              ctx.dict.invalidLightningAddressAmount(validation.expectedSats!),
+              { parse_mode: "Markdown" },
+            );
+          }
+
+          return ctx.reply(ctx.dict.invalidBuyerInvoice, {
+            parse_mode: "Markdown",
+          });
+        }
+
+        await setPayoutInvoice(orderId, validation.value);
+      } else {
+        if (!isValidAddress(address)) {
+          return ctx.reply(ctx.dict.invalidBuyerAddress, {
+            parse_mode: "Markdown",
+          });
+        }
+
+        await setBuyerAddress(orderId, address);
       }
 
-      await setBuyerAddress(orderId, address);
       ctx.session.awaitingAddressForOrder = undefined;
 
       const dict = ctx.dict;

@@ -23,7 +23,11 @@ import {
 import { getRateInfoFor } from "../utils/price.js";
 import { escapeMarkdown, formatFiatAmount, makeStarString } from "../utils/format.js";
 import { notifyUser, safeDeleteMsg } from "../utils/telegram.js";
-import { OrderStatus } from "../shared/constants.js";
+import {
+  OrderStatus,
+  SettlementMethodType,
+  getSettlementMethodLabel,
+} from "../shared/constants.js";
 import { getBuyerNetSats } from "../config/fees.js";
 export async function republishOrderSilently(
   bot: Telegraf<BotContext>,
@@ -37,6 +41,7 @@ export async function republishOrderSilently(
     {
       takerId: null,
       buyerAddress: null,
+      payoutInvoice: null,
       fiatAmountLocked: null,
       cancelRequestedBy: null,
       buyerXpub: null,
@@ -76,6 +81,7 @@ export async function handleOrderCancelledRepublish(
     {
       takerId: null,
       buyerAddress: null,
+      payoutInvoice: null,
       amountSats: 0,
       fiatAmountLocked: null,
       cancelRequestedBy: null,
@@ -151,6 +157,7 @@ export async function handleTakeOrder(ctx: CallbackContext, orderId: string) {
       amount: formatFiatAmount(order.amountFiat),
       margin: order.margin,
       method: escapeMarkdown(order.paymentMethod),
+      network: getSettlementMethodLabel(order.settlementMethod),
       id: order.id,
     }),
     {
@@ -187,6 +194,24 @@ export async function handleTakerConfirm(ctx: BotContext, orderId: string) {
   });
 }
 
+async function requestBuyerPayoutDetails(
+  ctx: BotContext,
+  order: OrderRecord,
+  estimatedSats: number,
+) {
+  ctx.session.awaitingAddressForOrder = order.id;
+
+  const isLightning =
+    order.settlementMethod === SettlementMethodType.Lightning;
+
+  await ctx.reply(
+    isLightning
+      ? ctx.dict.askBuyerInvoice(estimatedSats)
+      : ctx.dict.askBuyerAddress(estimatedSats),
+    { parse_mode: "Markdown" },
+  );
+}
+
 export async function proceedAfterTakerAmount(
   ctx: BotContext,
   order: OrderRecord,
@@ -215,7 +240,6 @@ export async function proceedAfterTakerAmount(
   const isTakerBuyer = order.type === "SELL";
 
   if (isTakerBuyer) {
-    ctx.session.awaitingAddressForOrder = order.id;
     const estimatedSats = getBuyerNetSats(baseSats);
     if (estimatedSats === 0) {
       ctx.session.awaitingAddressForOrder = undefined;
@@ -225,9 +249,7 @@ export async function proceedAfterTakerAmount(
         dict.priceApiErrorRepublish,
       );
     }
-    await ctx.reply(dict.askBuyerAddress(estimatedSats), {
-      parse_mode: "Markdown",
-    });
+    await requestBuyerPayoutDetails(ctx, order, estimatedSats);
   } else {
     await ctx.reply(dict.waitMaker, { parse_mode: "Markdown" });
     await notifyMakerForConfirmation(ctx, order);
@@ -266,6 +288,7 @@ export async function notifyMakerForConfirmation(
       amount: formatFiatAmount(displayAmount),
       margin: order.margin,
       method: escapeMarkdown(order.paymentMethod),
+      network: getSettlementMethodLabel(order.settlementMethod),
       trades: taker?.tradesCount || 0,
       days: daysUsing,
       ratingLabel: `${makeStarString(rating)} ${rating}/5`,
@@ -296,7 +319,6 @@ export async function handleMakerConfirm(
   const isMakerBuyer = order.type === "BUY";
 
   if (isMakerBuyer) {
-    ctx.session.awaitingAddressForOrder = orderId;
     const estimatedSats = getBuyerNetSats(order.amountSats);
 
     if (estimatedSats === 0) {
@@ -315,9 +337,7 @@ export async function handleMakerConfirm(
       );
     }
 
-    await ctx.reply(dict.askBuyerAddress(estimatedSats), {
-      parse_mode: "Markdown",
-    });
+    await requestBuyerPayoutDetails(ctx, order, estimatedSats);
   } else {
     await notifyUser(ctx, order.takerId!, (d) => d.acceptedNowWaitingEscrow);
     const didTransition = await tryTransitionOrderStatus(

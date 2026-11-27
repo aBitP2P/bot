@@ -34,6 +34,7 @@ const routes: Array<[string, Handler]> = [
       return handleWizardAction(ctx as BotContext);
     },
   ],
+  ["network_", (ctx) => handleWizardAction(ctx)],
   ["take_order_", (ctx, id) => handleTakeOrder(ctx, id)],
   ["taker_yes_", (ctx, id) => handleTakerConfirm(ctx, id)],
   ["maker_yes_", (ctx, id) => handleMakerConfirm(ctx, id)],

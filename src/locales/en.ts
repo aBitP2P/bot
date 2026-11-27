@@ -222,6 +222,7 @@ export default {
     amount,
     margin,
     method,
+    network,
     id,
   }: {
     type: string;
@@ -229,9 +230,11 @@ export default {
     amount: string;
     margin: number;
     method: string;
+    network: string;
     id: string;
   }) =>
     `*Confirm order · ${type} BTC*\n\n` +
+    `Network: ${network}\n` +
     `Amount: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
     `Margin: ${margin === 0 ? "At market price" : `*${margin > 0 ? "+" : ""}${margin}%* over market`}\n` +
     `Payment method: ${method}\n\n` +
@@ -243,6 +246,7 @@ export default {
     amount,
     margin,
     method,
+    network,
     trades,
     days,
     ratingLabel,
@@ -253,6 +257,7 @@ export default {
     amount: string;
     margin: number;
     method: string;
+    network: string;
     trades: number;
     days: number;
     ratingLabel: string;
@@ -260,6 +265,7 @@ export default {
   }) =>
     `📩 *New request · ${type} BTC*\n\n` +
     `Someone wants to take your order.\n\n` +
+    `Network: ${network}\n` +
     `Amount: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
     `Margin: ${margin === 0 ? "At market price" : `*${margin > 0 ? "+" : ""}${margin}%* over market`}\n` +
     `Payment method: ${method}\n\n` +
@@ -277,10 +283,15 @@ export default {
     "The estimated amount to be received is: `" +
     estimatedSats / 100_000_000 +
     "` BTC before network fees.",
+  askBuyerInvoice: (estimatedSats: number) =>
+    "⚡ *Please, send your Lightning invoice* (BOLT11) *or your Lightning address* (user@domain) where you will receive the funds.\n_(Make sure it is correct and has not expired, we are not responsible for mistakes)_\n\n" +
+    "The invoice must be for exactly `" +
+    estimatedSats +
+    "` sats.",
   waitMaker:
     "⏳ Perfect. Please, *wait for the counterparty to confirm* if they wish to proceed with the order.",
   waitTaker:
-    "⏳ Address saved. Now *wait for the seller to deposit* the funds into the escrow.",
+    "⏳ Payment details saved. Now *wait for the seller to deposit* the funds into the escrow.",
   acceptedNowWaitingEscrow: `✅ *Order accepted.*\n\n⏳ Waiting for the seller to send the funds to the escrow, this may take several minutes...`,
 
   // ─────────────────────────── Escrow & Network ───────────────────────────
@@ -631,6 +642,12 @@ export default {
     "❌ That Bitcoin address is invalid. Please send it again:",
   invalidBuyerAddress:
     "❌ That Bitcoin address is invalid. Please send a correct address:",
+  invalidBuyerInvoice:
+    "❌ That Lightning invoice is invalid or has expired. Please send a valid invoice or Lightning address:",
+  invalidBuyerInvoiceAmount: (expectedSats: number, receivedSats: number) =>
+    `❌ The invoice must be for exactly *${expectedSats} sats*. The invoice you sent is for *${receivedSats} sats*.\nTry again:`,
+  invalidLightningAddressAmount: (expectedSats: number) =>
+    `❌ That Lightning address does not accept exactly *${expectedSats} sats*. Send another invoice or Lightning address:`,
   maxOrdersReached: "❌ You reached the limit of orders created by you.",
   invalidFiatCode: "❌ Entered fiat code is invalid, please try again:",
   orderAlreadyRated: "❌ The counterparty had already been rated.",

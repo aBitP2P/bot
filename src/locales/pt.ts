@@ -224,6 +224,7 @@ export default {
     amount,
     margin,
     method,
+    network,
     id,
   }: {
     type: string;
@@ -231,9 +232,11 @@ export default {
     amount: string;
     margin: number;
     method: string;
+    network: string;
     id: string;
   }) =>
     `*Confirmar ordem · ${type} BTC*\n\n` +
+    `Rede: ${network}\n` +
     `Valor: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
     `Margem: ${margin === 0 ? "A preço de mercado" : `*${margin > 0 ? "+" : ""}${margin}%* em relação ao mercado`}\n` +
     `Método de pagamento: ${method}\n\n` +
@@ -245,6 +248,7 @@ export default {
     amount,
     margin,
     method,
+    network,
     trades,
     days,
     ratingLabel,
@@ -255,6 +259,7 @@ export default {
     amount: string;
     margin: number;
     method: string;
+    network: string;
     trades: number;
     days: number;
     ratingLabel: string;
@@ -262,6 +267,7 @@ export default {
   }) =>
     `📩 *Nova solicitação · ${type} BTC*\n\n` +
     `Alguém deseja aceitar sua ordem.\n\n` +
+    `Rede: ${network}\n` +
     `Valor: ${amount} ${fiat} ${getFiatEmoji(fiat)}\n` +
     `Margem: ${margin === 0 ? "A preço de mercado" : `*${margin > 0 ? "+" : ""}${margin}%* em relação ao mercado`}\n` +
     `Método de pagamento: ${method}\n\n` +
@@ -279,10 +285,15 @@ export default {
     "O valor estimado a receber é de: `" +
     estimatedSats / 100_000_000 +
     "` BTC antes das taxas da rede.",
+  askBuyerInvoice: (estimatedSats: number) =>
+    "⚡ *Envie sua fatura Lightning* (BOLT11) *ou seu endereço Lightning* (usuario@dominio) onde você receberá os fundos.\n_(Certifique-se de que estão corretos e que a fatura não expirou. Não nos responsabilizamos por erros.)_\n\n" +
+    "A fatura deve ser de exatamente `" +
+    estimatedSats +
+    "` sats.",
   waitMaker:
     "⏳ Perfeito. *Aguarde a confirmação da contraparte* para continuar com a ordem.",
   waitTaker:
-    "⏳ Endereço salvo. Agora *aguarde o vendedor depositar os fundos no escrow*.",
+    "⏳ Dados de pagamento salvos. Agora *aguarde o vendedor depositar os fundos no escrow*.",
   acceptedNowWaitingEscrow: `✅ *Ordem aceita.*\n\n⏳ Aguardando o vendedor enviar os fundos para o escrow. Isso pode levar alguns minutos...`,
 
   // ─────────────────────────── Escrow e Rede ───────────────────────────
@@ -636,6 +647,12 @@ export default {
     "❌ Este endereço de Bitcoin não é válido. Envie-o novamente:",
   invalidBuyerAddress:
     "❌ Este endereço de Bitcoin não é válido. Envie um endereço correto:",
+  invalidBuyerInvoice:
+    "❌ Esta fatura Lightning não é válida ou expirou. Envie uma fatura ou endereço Lightning válido:",
+  invalidBuyerInvoiceAmount: (expectedSats: number, receivedSats: number) =>
+    `❌ A fatura deve ser de exatamente *${expectedSats} sats*. A fatura enviada é de *${receivedSats} sats*.\nTente novamente:`,
+  invalidLightningAddressAmount: (expectedSats: number) =>
+    `❌ Este endereço Lightning não aceita exatamente *${expectedSats} sats*. Envie outra fatura ou endereço Lightning:`,
   maxOrdersReached: "❌ Você atingiu o limite de ordens criadas.",
   invalidFiatCode: "❌ O código FIAT não foi reconhecido. Tente novamente:",
   orderAlreadyRated: "❌ A contraparte já foi avaliada.",

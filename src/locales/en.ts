@@ -265,6 +265,11 @@ export default {
     `\`${address}\`\n` +
     `We recommend backing up this escrow data now in case you need it. (/backup)\n\n` +
     `_Once the transaction is confirmed (${formatConfirmations("en")}), we will put you in contact. Please make sure to send the EXACT amount, otherwise, it might require manual attention._`,
+  askSellerLightningEscrow: (sats: number, invoice: string) =>
+    `⚡ *Lightning payment required*\n\n` +
+    `Pay the following invoice for exactly \`${sats}\` sats:\n\n` +
+    `\`${invoice}\`\n\n` +
+    `_This is a hold invoice: the payment will be locked in your wallet and will not be settled until the buyer confirms the trade. If the order is cancelled, the payment is released automatically._`,
   escrowUnconfirmed: (escrowAddress: string) =>
     `⏳ *Transaction detected on the network.*\n\n` +
     `[View in explorer](${mempoolBaseURL}/address/${escrowAddress})\n` +

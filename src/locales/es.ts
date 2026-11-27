@@ -265,6 +265,11 @@ export default {
     `\`${address}\`\n` +
     `Te recomendamos respaldar los datos de este escrow ahora por si los llegas a necesitar. (/backup)\n\n` +
     `_Una vez se confirme la transacción (${formatConfirmations("es")}), los pondremos en contacto. Por favor, asegurate de enviar la cantidad EXACTA, de no ser así, podría requerir atención manual._`,
+  askSellerLightningEscrow: (sats: number, invoice: string) =>
+    `⚡ *Pago Lightning requerido*\n\n` +
+    `Paga la siguiente factura por exactamente \`${sats}\` sats:\n\n` +
+    `\`${invoice}\`\n\n` +
+    `_Es una factura de retención (hold invoice): el pago quedará bloqueado en tu wallet y no se cobrará hasta que el comprador confirme la operación. Si la orden se cancela, el pago se libera automáticamente._`,
   escrowUnconfirmed: (escrowAddress: string) =>
     `⏳ *Transacción detectada en la red.*\n\n` +
     `[Ver en el explorador](${mempoolBaseURL}/address/${escrowAddress}) \n` +

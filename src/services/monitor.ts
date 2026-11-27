@@ -1,9 +1,13 @@
-import { and, eq, lte, or } from "drizzle-orm";
+import { and, eq, inArray, lte, or } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { orders } from "../db/schema.js";
 import { checkEscrowFunding, fetchMempool } from "../core/bitcoin/index.js";
 import { Telegraf } from "telegraf";
-import { type BotContext, type OrderRecord, type UserRecord } from "../types.js";
+import {
+  type BotContext,
+  type OrderRecord,
+  type UserRecord,
+} from "../types.js";
 import { getUser } from "../db/users.js";
 import { tryTransitionOrderStatus } from "../db/orders.js";
 import { escapeMarkdown } from "../utils/format.js";
@@ -13,6 +17,8 @@ import { notifyUser } from "../utils/telegram.js";
 import { OrderStatus } from "../shared/constants.js";
 import { getSellerDepositSats } from "../config/fees.js";
 import { removeOrderFromChannel } from "../services/orderPublisher.js";
+import { watchHoldInvoice } from "../core/lightning/listeners.js";
+import { SettlementMethodType, TERMINAL_STATUSES } from "../shared/constants.js";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
@@ -47,7 +53,65 @@ function selectOrdersWhere(status: string, updatedBefore: number) {
   return db
     .select()
     .from(orders)
-    .where(and(eq(orders.status, status), lte(orders.updatedAt, updatedBefore)));
+    .where(
+      and(eq(orders.status, status), lte(orders.updatedAt, updatedBefore)),
+    );
+}
+
+export async function resumeHoldInvoiceWatches(bot: Bot) {
+  const pending = await db
+    .select()
+    .from(orders)
+    .where(
+      and(
+        inArray(orders.status, [OrderStatus.WaitingEscrow, OrderStatus.Active]),
+        eq(orders.settlementMethod, SettlementMethodType.Lightning),
+      ),
+    );
+
+  for (const order of pending) {
+    if (!order.holdInvoiceHash) continue;
+    watchOrderHoldInvoice(bot, order, order.holdInvoiceHash);
+  }
+}
+
+export function watchOrderHoldInvoice(
+  bot: { telegram: Bot["telegram"] },
+  order: OrderRecord,
+  hash: string,
+) {
+  watchHoldInvoice(
+    order,
+    hash,
+    async (o) => {
+      const didChangeStatus = await tryTransitionOrderStatus(
+        o.id,
+        [OrderStatus.WaitingEscrow],
+        OrderStatus.Active,
+      );
+      if (!didChangeStatus) return;
+
+      const { buyerId, sellerId } = getParties(o);
+      const buyer = (await getUser(buyerId!))!;
+      const seller = (await getUser(sellerId!))!;
+      await notifyConfirmedEscrowFunding({ bot, buyer, seller, order: o });
+    },
+    async (o) => {
+      const nonTerminalStatuses = Object.values(OrderStatus).filter(
+        (status) => !TERMINAL_STATUSES.includes(status as any),
+      );
+      const didCancel = await tryTransitionOrderStatus(
+        o.id,
+        nonTerminalStatuses,
+        OrderStatus.Cancelled,
+      );
+      if (!didCancel) return;
+
+      const { buyerId, sellerId } = getParties(o);
+      await notifyUser(bot, buyerId!, (d) => d.orderCancelled);
+      await notifyUser(bot, sellerId!, (d) => d.orderCancelled);
+    },
+  );
 }
 
 export function startEscrowMonitor(bot: Bot) {
@@ -78,19 +142,33 @@ export function startEscrowMonitor(bot: Bot) {
   });
 }
 
-async function checkPendingEscrow(bot: Bot, order: OrderRecord, currentHeight: number) {
+async function checkPendingEscrow(
+  bot: Bot,
+  order: OrderRecord,
+  currentHeight: number,
+) {
   if (!order.escrowAddress) return;
 
-  const fundingInfo = await checkEscrowFunding(order.escrowAddress, currentHeight);
+  const fundingInfo = await checkEscrowFunding(
+    order.escrowAddress,
+    currentHeight,
+  );
   if (!fundingInfo) return;
 
   const expectedSats = getSellerDepositSats(order.amountSats);
   const { buyerId, sellerId } = getParties(order);
-  const seller = await getUser(sellerId!);
-  const buyer = await getUser(buyerId!);
+  const seller = (await getUser(sellerId!))!;
+  const buyer = (await getUser(buyerId!))!;
 
   if (fundingInfo.totalFundedSats < expectedSats) {
-    await handleUnderfunded(bot, order, fundingInfo, expectedSats, seller, buyer);
+    await handleUnderfunded(
+      bot,
+      order,
+      fundingInfo,
+      expectedSats,
+      seller,
+      buyer,
+    );
     return;
   }
 
@@ -103,8 +181,12 @@ async function checkPendingEscrow(bot: Bot, order: OrderRecord, currentHeight: n
       OrderStatus.Unconfirmed,
     );
     if (didMarkUnconfirmed) {
-      await notifyUser(bot, seller, (d) => d.escrowUnconfirmed(order.escrowAddress!));
-      await notifyUser(bot, buyer, (d) => d.escrowUnconfirmed(order.escrowAddress!));
+      await notifyUser(bot, seller, (d) =>
+        d.escrowUnconfirmed(order.escrowAddress!),
+      );
+      await notifyUser(bot, buyer, (d) =>
+        d.escrowUnconfirmed(order.escrowAddress!),
+      );
     }
   }
 
@@ -116,14 +198,37 @@ async function checkPendingEscrow(bot: Bot, order: OrderRecord, currentHeight: n
     );
     if (!didTransition) return;
 
-    const sellerContact = "@" + escapeMarkdown(seller!.username);
-    const buyerContact = "@" + escapeMarkdown(buyer!.username);
-
-    await notifyUser(bot, seller, (d) => d.escrowConfirmedSeller(buyerContact, order.id));
-    await notifyUser(bot, buyer, (d) => d.escrowConfirmedBuyer(sellerContact, order.id));
-
-    await alertOverfunding(bot, order.id, sellerId, seller, fundingInfo.totalFundedSats, expectedSats);
+    await notifyConfirmedEscrowFunding({ bot, seller, buyer, order });
+    await alertOverfunding(
+      bot,
+      order.id,
+      sellerId,
+      seller,
+      fundingInfo.totalFundedSats,
+      expectedSats,
+    );
   }
+}
+
+export async function notifyConfirmedEscrowFunding({
+  bot,
+  seller,
+  buyer,
+  order,
+}: {
+  bot: { telegram: Bot["telegram"] };
+  seller: UserRecord;
+  buyer: UserRecord;
+  order: OrderRecord;
+}) {
+  const sellerContact = "@" + escapeMarkdown(seller!.username);
+  const buyerContact = "@" + escapeMarkdown(buyer!.username);
+  await notifyUser(bot, seller, (d) =>
+    d.escrowConfirmedSeller(buyerContact, order.id),
+  );
+  await notifyUser(bot, buyer, (d) =>
+    d.escrowConfirmedBuyer(sellerContact, order.id),
+  );
 }
 
 async function handleUnderfunded(
@@ -142,8 +247,16 @@ async function handleUnderfunded(
         OrderStatus.Cancelled,
       );
       if (didCancel) {
-        await notifyUser(bot, seller, (d) => d.orderCancelledTransactionDisappeared);
-        await notifyUser(bot, buyer, (d) => d.orderCancelledSellerDepositReverted);
+        await notifyUser(
+          bot,
+          seller,
+          (d) => d.orderCancelledTransactionDisappeared,
+        );
+        await notifyUser(
+          bot,
+          buyer,
+          (d) => d.orderCancelledSellerDepositReverted,
+        );
       }
     } else {
       const didTransition = await tryTransitionOrderStatus(
@@ -168,7 +281,12 @@ async function handleUnderfunded(
     );
     if (didTransition) {
       await notifyUser(bot, seller, (d) =>
-        d.escrowFundingFailed(fundingInfo.utxoCount, fundingInfo.totalFundedSats, expectedSats, order.id),
+        d.escrowFundingFailed(
+          fundingInfo.utxoCount,
+          fundingInfo.totalFundedSats,
+          expectedSats,
+          order.id,
+        ),
       );
       await notifyUser(bot, buyer, (d) => d.orderCancelledSellerFunding);
     }
@@ -176,7 +294,11 @@ async function handleUnderfunded(
     notifiedPartial.add(order.id);
     const remainingSats = expectedSats - fundingInfo.totalFundedSats;
     await notifyUser(bot, seller, (d) =>
-      d.incompleteFunding(fundingInfo.totalFundedSats, expectedSats, remainingSats),
+      d.incompleteFunding(
+        fundingInfo.totalFundedSats,
+        expectedSats,
+        remainingSats,
+      ),
     );
   }
 }
@@ -226,7 +348,12 @@ async function cancelExpiredPending(bot: Bot, createdBefore: number) {
   const expiredPending = await db
     .select()
     .from(orders)
-    .where(and(eq(orders.status, OrderStatus.Pending), lte(orders.createdAt, createdBefore)));
+    .where(
+      and(
+        eq(orders.status, OrderStatus.Pending),
+        lte(orders.createdAt, createdBefore),
+      ),
+    );
 
   for (const order of expiredPending) {
     const didCancel = await tryTransitionOrderStatus(
@@ -237,25 +364,35 @@ async function cancelExpiredPending(bot: Bot, createdBefore: number) {
     if (!didCancel) continue;
 
     await removeOrderFromChannel(bot.telegram, order.channelMessageId);
-    await notifyUser(bot, order.creatorId, (d) => d.orderExpiredCancelled(order.id));
+    await notifyUser(bot, order.creatorId, (d) =>
+      d.orderExpiredCancelled(order.id),
+    );
   }
 }
 
 async function republishTakerTimeouts(bot: Bot, updatedBefore: number) {
-  const takerTimeouts = await selectOrdersWhere(OrderStatus.WaitingTakerConfirmation, updatedBefore);
+  const takerTimeouts = await selectOrdersWhere(
+    OrderStatus.WaitingTakerConfirmation,
+    updatedBefore,
+  );
 
   for (const order of takerTimeouts) {
     const takerIdToNotify = order.takerId; // Respaldar antes de que republish lo ponga en null
     const republished = await republishOrderSilently(bot, order.id);
 
     if (republished && takerIdToNotify) {
-      await notifyUser(bot, takerIdToNotify, (d) => d.takerTimeoutNotifyTaker(order.id));
+      await notifyUser(bot, takerIdToNotify, (d) =>
+        d.takerTimeoutNotifyTaker(order.id),
+      );
     }
   }
 }
 
 async function cancelMakerTimeouts(bot: Bot, updatedBefore: number) {
-  const makerTimeouts = await selectOrdersWhere(OrderStatus.WaitingMakerConfirmation, updatedBefore);
+  const makerTimeouts = await selectOrdersWhere(
+    OrderStatus.WaitingMakerConfirmation,
+    updatedBefore,
+  );
 
   for (const order of makerTimeouts) {
     const didCancel = await tryTransitionOrderStatus(
@@ -265,13 +402,20 @@ async function cancelMakerTimeouts(bot: Bot, updatedBefore: number) {
     );
     if (!didCancel) continue;
 
-    await notifyUser(bot, order.creatorId, (d) => d.makerTimeoutNotifyMaker(order.id));
-    await notifyUser(bot, order.takerId!, (d) => d.makerTimeoutNotifyTaker(order.id));
+    await notifyUser(bot, order.creatorId, (d) =>
+      d.makerTimeoutNotifyMaker(order.id),
+    );
+    await notifyUser(bot, order.takerId!, (d) =>
+      d.makerTimeoutNotifyTaker(order.id),
+    );
   }
 }
 
 async function handleEscrowTimeouts(bot: Bot, updatedBefore: number) {
-  const escrowTimeouts = await selectOrdersWhere(OrderStatus.WaitingEscrow, updatedBefore);
+  const escrowTimeouts = await selectOrdersWhere(
+    OrderStatus.WaitingEscrow,
+    updatedBefore,
+  );
 
   for (const order of escrowTimeouts) {
     const funding = await checkEscrowFunding(order.escrowAddress!);
@@ -290,27 +434,48 @@ async function handleEscrowTimeouts(bot: Bot, updatedBefore: number) {
       continue;
     }
 
-    if (order.type === "SELL") {
-      const didCancel = await tryTransitionOrderStatus(
-        order.id,
-        [OrderStatus.WaitingEscrow],
-        OrderStatus.Cancelled,
+    await cancelExpiredEscrow({
+      bot,
+      order,
+    });
+  }
+}
+
+export async function cancelExpiredEscrow({
+  order,
+  bot,
+}: {
+  order: OrderRecord;
+  bot: BotContext | Bot;
+}) {
+  if (order.type === "SELL") {
+    const didCancel = await tryTransitionOrderStatus(
+      order.id,
+      [OrderStatus.WaitingEscrow],
+      OrderStatus.Cancelled,
+    );
+    if (didCancel) {
+      await notifyUser(bot, order.creatorId, (d) =>
+        d.makerTimeoutNotifyMaker(order.id),
       );
-      if (didCancel) {
-        await notifyUser(bot, order.creatorId, (d) => d.makerTimeoutNotifyMaker(order.id));
-        await notifyUser(bot, order.takerId!, (d) => d.makerTimeoutNotifyTaker(order.id));
-      }
-      continue;
+      await notifyUser(bot, order.takerId!, (d) =>
+        d.makerTimeoutNotifyTaker(order.id),
+      );
     }
+    return;
+  }
 
-    const takerIdToNotify = order.takerId;
-    const republished = await republishOrderSilently(bot, order.id, [OrderStatus.WaitingEscrow]);
+  const takerIdToNotify = order.takerId;
+  const republished = await republishOrderSilently(bot as Bot, order.id, [
+    OrderStatus.WaitingEscrow,
+  ]);
 
-    if (republished) {
-      await notifyUser(bot, order.creatorId, (d) => d.sellerDidNotFund(order.id));
-      if (takerIdToNotify) {
-        await notifyUser(bot, takerIdToNotify, (d) => d.takerTimeoutNotifyTaker(order.id));
-      }
+  if (republished) {
+    await notifyUser(bot, order.creatorId, (d) => d.sellerDidNotFund(order.id));
+    if (takerIdToNotify) {
+      await notifyUser(bot, takerIdToNotify, (d) =>
+        d.takerTimeoutNotifyTaker(order.id),
+      );
     }
   }
 }

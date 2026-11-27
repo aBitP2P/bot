@@ -70,7 +70,7 @@ export function getPairCounterKey(xpubA: string, xpubB: string): string {
   return `${first}:${second}`;
 }
 
-export function generateEscrow(
+export function generateOnChainEscrow(
   buyerXpub: string,
   sellerXpub: string,
   derivationIndex: number,

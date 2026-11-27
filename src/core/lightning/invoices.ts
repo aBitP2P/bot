@@ -65,10 +65,19 @@ export type LightningPayoutValidation =
 
 const LIGHTNING_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-async function validateLightningAddress(
+type LightningAddressInvoice =
+  | { ok: true; request: string }
+  | { ok: false; reason: "invalid" | "address-amount"; expectedSats?: number };
+
+/**
+ * Resuelve una dirección Lightning (LNURL-pay) a una factura BOLT11 fresca por
+ * el monto exacto. Las facturas de una dirección expiran, por lo que hay que
+ * volver a resolverlas en el momento de pagar.
+ */
+async function fetchLightningAddressInvoice(
   address: string,
   expectedSats: number,
-): Promise<LightningPayoutValidation> {
+): Promise<LightningAddressInvoice> {
   const [username, domain] = address.split("@");
 
   if (!username || !domain) return { ok: false, reason: "invalid" };
@@ -106,20 +115,33 @@ async function validateLightningAddress(
     const callbackResponse = await fetch(callbackUrl, {
       signal: AbortSignal.timeout(10_000),
     });
-    if (!callbackResponse.ok) return { ok: false, reason: "address-amount", expectedSats };
+    if (!callbackResponse.ok) {
+      return { ok: false, reason: "address-amount", expectedSats };
+    }
 
     const callbackData = (await callbackResponse.json()) as { pr?: string };
-    if (!callbackData.pr) return { ok: false, reason: "address-amount", expectedSats };
+    if (!callbackData.pr) {
+      return { ok: false, reason: "address-amount", expectedSats };
+    }
 
     const invoice = await decodeLightningInvoice(callbackData.pr);
     if (!invoice || BigInt(invoice.mtokens || "0") !== BigInt(amountMsats)) {
       return { ok: false, reason: "address-amount", expectedSats };
     }
 
-    return { ok: true, value: address };
+    return { ok: true, request: callbackData.pr };
   } catch {
     return { ok: false, reason: "invalid" };
   }
+}
+
+async function validateLightningAddress(
+  address: string,
+  expectedSats: number,
+): Promise<LightningPayoutValidation> {
+  const result = await fetchLightningAddressInvoice(address, expectedSats);
+  if (!result.ok) return result;
+  return { ok: true, value: address };
 }
 
 /**
@@ -152,4 +174,31 @@ export const validateLightningPayout = async (
   }
 
   return { ok: true, value };
+};
+
+/**
+ * Devuelve una BOLT11 lista para pagar por exactamente `expectedSats`.
+ * Si el destino es una dirección Lightning, pide una factura nueva al LNURL
+ * (la validada al recibirla puede haber expirado).
+ * Devuelve `null` si el destino no es válido o el monto no coincide.
+ */
+export const resolvePayoutRequest = async (
+  input: string,
+  expectedSats: number,
+): Promise<string | null> => {
+  const value = input.trim();
+
+  if (LIGHTNING_ADDRESS_REGEX.test(value)) {
+    const result = await fetchLightningAddressInvoice(value, expectedSats);
+    return result.ok ? result.request : null;
+  }
+
+  const invoice = await decodeLightningInvoice(value);
+  if (!invoice) return null;
+
+  const mtokens = BigInt(invoice.mtokens || "0");
+  const expectedMtokens = BigInt(expectedSats) * 1000n;
+  if (mtokens !== expectedMtokens) return null;
+
+  return value;
 };

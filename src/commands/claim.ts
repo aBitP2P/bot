@@ -1,14 +1,19 @@
 import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
-import type { BotContext, CallbackContext, CommandContext, OrderRecord } from "../types.js";
+import type { BotContext, CallbackContext, CommandContext, Dictionary, OrderRecord } from "../types.js";
 import { getLiveMinerFee, checkEscrowFunding, DUST_LIMIT, findSpendingTxid } from "../core/bitcoin/index.js";
 import { orders } from "../db/schema.js";
 import { db } from "../db/index.js";
 import { and, eq, or } from "drizzle-orm";
-import { OrderStatus } from "../shared/constants.js";
+import { OrderStatus, SettlementMethodType } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { getParties } from "../utils/order.js";
-import { safeDeleteMsg } from "../utils/telegram.js";
+import { notifyUser, safeDeleteMsg } from "../utils/telegram.js";
 import { getBuyerNetSats, getPartyFeeSats } from "../config/fees.js";
+import {
+  refundOrderToSeller,
+  settleOrderToBuyer,
+  type LightningSettlementReason,
+} from "../core/lightning/settlement.js";
 import { Markup } from "telegraf";
 
 export async function claimCommand(ctx: CommandContext) {
@@ -69,6 +74,10 @@ export async function initiateClaim(
   }
 
   const { buyerId, sellerId } = getParties(order);
+
+  if (order.settlementMethod === SettlementMethodType.Lightning) {
+    return handleLightningClaim(ctx, order);
+  }
 
   if (order.status === OrderStatus.Releasable) {
     if (userId !== buyerId) return ctx.reply(dict.onlyBuyer);
@@ -144,4 +153,109 @@ export async function startClaimPasswordFlow(
     ]),
   },
 );
+}
+
+function mapLightningSettlementError(
+  dict: Dictionary,
+  reason: LightningSettlementReason,
+): string {
+  switch (reason) {
+    case "in-progress":
+      return dict.lightningInProgress;
+    case "already-processed":
+      return dict.lightningAlreadyProcessed;
+    case "invoice-expired":
+    case "missing-payout-invoice":
+      return dict.lightningInvoiceExpired;
+    case "invalid-status":
+    case "order-not-found":
+    case "wrong-settlement-method":
+      return dict.invalidOrderStatus;
+    default:
+      return dict.lightningPaymentFailed;
+  }
+}
+
+/**
+ * Claim de una orden Lightning: el bot custodia la preimagen, así que no hay
+ * PSBT ni contraseña. El comprador cobra liquidando el hold invoice y pagando
+ * su factura; el vendedor reembolsa cancelando el hold invoice.
+ */
+async function handleLightningClaim(ctx: BotContext, order: OrderRecord) {
+  const dict = ctx.dict;
+  const userId = ctx.from?.id;
+  const { buyerId, sellerId } = getParties(order);
+  const isRefund = order.status === OrderStatus.Refundable;
+
+  if (isRefund) {
+    if (userId !== sellerId) return ctx.reply(dict.onlySeller);
+  } else if (userId !== buyerId) {
+    return ctx.reply(dict.onlyBuyer);
+  }
+
+  const loadingMsg = await ctx.reply(
+    isRefund ? dict.lightningRefundLoading : dict.lightningClaimLoading,
+    { parse_mode: "Markdown" },
+  );
+
+  const deleteLoading = () =>
+    ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id).catch(() => {});
+
+  try {
+    if (isRefund) {
+      const result = await refundOrderToSeller(order.id);
+      await deleteLoading();
+
+      if (!result.ok) {
+        if (result.cause) {
+          console.error(
+            `[lightning] refund ${order.id} (${result.reason}):`,
+            result.cause,
+          );
+        }
+        return ctx.reply(mapLightningSettlementError(dict, result.reason), {
+          parse_mode: "Markdown",
+        });
+      }
+
+      await ctx.reply(dict.lightningRefundSuccess(), {
+        parse_mode: "Markdown",
+      });
+
+      if (buyerId) {
+        await notifyUser(ctx, buyerId, (d) =>
+          d.refundCompletedNotification(order.id),
+        );
+      }
+      return;
+    }
+
+    const result = await settleOrderToBuyer(order.id);
+    await deleteLoading();
+
+    if (!result.ok) {
+      if (result.cause) {
+        console.error(
+          `[lightning] settle ${order.id} (${result.reason}):`,
+          result.cause,
+        );
+      }
+      return ctx.reply(mapLightningSettlementError(dict, result.reason), {
+        parse_mode: "Markdown",
+      });
+    }
+
+    return ctx.reply(dict.lightningPayoutSuccess(result.paymentHash), {
+      parse_mode: "Markdown",
+    });
+  } catch (error) {
+    await deleteLoading();
+    console.error("[lightning] error inesperado en claim:", error);
+    return ctx.reply(
+      dict.errorProcessingTx(
+        error instanceof Error ? error.message : String(error),
+      ),
+      { parse_mode: "Markdown" },
+    );
+  }
 }

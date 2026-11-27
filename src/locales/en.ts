@@ -498,6 +498,19 @@ export default {
     `🎉 *Refund Successful!*\n\nYour funds are on their way back to your wallet.\n🔎 [View TX](${mempoolBaseURL}/tx/${txid})`,
   refundCompletedNotification: (orderId: string) =>
     `ℹ️ *Order Cancelled*\n\nThe seller claimed the refund for order \`${orderId}\`. The escrow funds have been returned.`,
+  lightningClaimLoading: `⚡ *Settling the hold invoice and sending your payout...*`,
+  lightningRefundLoading: `⚡ *Cancelling the hold invoice and releasing your refund...*`,
+  lightningPayoutSuccess: (paymentHash: string) =>
+    `🎉 *Withdrawal Successful!*\n\nThe payment was sent over the Lightning Network.\n🔎 Payment hash: \`${paymentHash}\``,
+  lightningRefundSuccess: () =>
+    `🎉 *Refund Successful!*\n\nThe hold invoice was cancelled and your funds were released back to your wallet.`,
+  lightningInProgress:
+    "⏳ There is already an operation in progress for this order. Wait a few seconds and try again.",
+  lightningAlreadyProcessed: "ℹ️ This order has already been processed.",
+  lightningInvoiceExpired:
+    "❌ The Lightning payout invoice or address is no longer valid or has expired. Contact an administrator to resolve this order.",
+  lightningPaymentFailed:
+    "❌ The Lightning operation could not be completed. Try again in a few minutes; if it persists, open a dispute.",
 
   // ─────────────────────────── Cancellations ───────────────────────────
   selectOrderToCancel:

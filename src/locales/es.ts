@@ -505,6 +505,19 @@ export default {
     `🎉 *¡Reembolso Exitoso!*\n\nTus fondos van de vuelta a tu billetera.\n🔎 [Ver TX](${mempoolBaseURL}/tx/${txid})`,
   refundCompletedNotification: (orderId: string) =>
     `ℹ️ *Orden Cancelada*\n\nEl vendedor reclamó el reembolso de la orden \`${orderId}\`. Los fondos del escrow fueron devueltos.`,
+  lightningClaimLoading: `⚡ *Liquidando la factura de retención y enviando tu pago...*`,
+  lightningRefundLoading: `⚡ *Cancelando la factura de retención y liberando tu reembolso...*`,
+  lightningPayoutSuccess: (paymentHash: string) =>
+    `🎉 *¡Retiro exitoso!*\n\nEl pago fue enviado por la red Lightning.\n🔎 Hash de pago: \`${paymentHash}\``,
+  lightningRefundSuccess: () =>
+    `🎉 *¡Reembolso exitoso!*\n\nLa factura de retención fue cancelada y tus fondos quedaron liberados en tu wallet.`,
+  lightningInProgress:
+    "⏳ Ya hay una operación en curso para esta orden. Espera unos segundos e inténtalo de nuevo.",
+  lightningAlreadyProcessed: "ℹ️ Esta orden ya fue procesada.",
+  lightningInvoiceExpired:
+    "❌ La factura o dirección Lightning de cobro ya no es válida o expiró. Contacta a un administrador para resolver esta orden.",
+  lightningPaymentFailed:
+    "❌ No se pudo completar la operación Lightning. Inténtalo de nuevo en unos minutos; si persiste, abre una disputa.",
 
   // ─────────────────────────── Cancellations ───────────────────────────
   selectOrderToCancel:

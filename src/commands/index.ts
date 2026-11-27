@@ -11,3 +11,4 @@ export { setlangCommand } from "./setlang.js";
 export { feesCommand } from "./fees.js"
 export { setFeeCommand } from "./setfee.js";
 export { backupCommand } from "./backup.js"
+export { setAddressCommand } from "./setaddress.js";

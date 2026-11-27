@@ -290,6 +290,8 @@ export default {
     "A fatura deve ser de exatamente `" +
     estimatedSats +
     "` sats.",
+  payoutDetailsUpdated: (orderId: string) =>
+    `✅ *Dados de recebimento atualizados.*\n\nAgora você pode reivindicar os fundos com \`/claim ${orderId}\``,
   waitMaker:
     "⏳ Perfeito. *Aguarde a confirmação da contraparte* para continuar com a ordem.",
   waitTaker:
@@ -463,8 +465,10 @@ export default {
   // ─────────────────────────── Claim e Reembolso ───────────────────────────
   selectClaimableOrder:
     "👇 Selecione a ordem da qual você deseja resgatar os fundos:",
+  selectAddressChangeableOrder:
+    "👇 Selecione a ordem cujo endereço de pagamento você deseja alterar:",
   noClaimableOrdersFound:
-    "📭 Você não tem ordens prontas para resgate ou reembolso.",
+    "📭 Você não tem ordens que possa resgatar ou alterar o endereço de pagamento.",
   showClaimPreview: (
     minerFee: number,
     finalAmount: number,
@@ -512,9 +516,9 @@ export default {
     "⏳ Já existe uma operação em andamento para esta ordem. Aguarde alguns segundos e tente novamente.",
   lightningAlreadyProcessed: "ℹ️ Esta ordem já foi processada.",
   lightningInvoiceExpired:
-    "❌ A fatura ou endereço Lightning de recebimento não é mais válido ou expirou. Contacte um administrador para resolver esta ordem.",
+    "❌ A fatura ou endereço Lightning de recebimento não é mais válido ou expirou. Use o comando /setaddress para atualizar a fatura.",
   lightningPaymentFailed:
-    "❌ Não foi possível concluir a operação Lightning. Tente novamente em alguns minutos; se persistir, abra uma disputa.",
+    "❌ Não foi possível concluir a operação Lightning. Tente novamente em alguns minutos; se persistir, use o comando /setaddress para testar com outra fatura.",
 
   // ─────────────────────────── Cancelamentos ───────────────────────────
   selectOrderToCancel:

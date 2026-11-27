@@ -14,6 +14,7 @@ export function registerCommands(bot: Telegraf<BotContext>) {
   });
   
   bot.command("claim", c.claimCommand);
+  bot.command("setaddress", c.setAddressCommand);
   bot.command("fiatsent", c.fiatsentCommand);
   bot.command("release", c.releaseCommand);
   bot.command("cancel", c.cancelCommand);

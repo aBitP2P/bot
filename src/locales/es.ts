@@ -126,7 +126,7 @@ export default {
     prompt: string,
   ) => {
     const lines = [`🔧 *Creando anuncio · ${type} BTC*`];
-    if (chain) lines.push("Red: " + chain)
+    if (chain) lines.push("Red: " + chain);
     if (fiat) lines.push(`Moneda FIAT: ${fiat} ${getFiatEmoji(fiat)}`);
     if (amount && amount !== "0") lines.push(`Importe: ${amount} ${fiat}`);
     if (margin)
@@ -153,7 +153,7 @@ export default {
     id,
   }: {
     action: string;
-    chain: string,
+    chain: string;
     amountFiat: string;
     fiat: string;
     payDirection: string;
@@ -288,6 +288,8 @@ export default {
     "La factura debe ser de exactamente `" +
     estimatedSats +
     "` sats.",
+  payoutDetailsUpdated: (orderId: string) =>
+    `✅ *Datos de cobro actualizados.*\n\nYa puedes reclamar los fondos con \`/claim ${orderId}\``,
   waitMaker:
     "⏳ Perfecto. Por favor, *espera a que la contraparte confirme* si desea continuar con la orden.",
   waitTaker:
@@ -464,8 +466,10 @@ export default {
   // ─────────────────────────── Claim & Refund ───────────────────────────
   selectClaimableOrder:
     "👇 Selecciona la orden de la cual deseas reclamar los fondos:",
+  selectAddressChangeableOrder:
+    "👇 Selecciona la orden la cual desear modificar la dirección de pago:",
   noClaimableOrdersFound:
-    "📭 No tienes órdenes listas para retirar o reembolsar.",
+    "📭 No tienes órdenes las cuales puedas reclamar o cambiar su dirección de pago.",
   showClaimPreview: (
     minerFee: number,
     finalAmount: number,
@@ -515,9 +519,9 @@ export default {
     "⏳ Ya hay una operación en curso para esta orden. Espera unos segundos e inténtalo de nuevo.",
   lightningAlreadyProcessed: "ℹ️ Esta orden ya fue procesada.",
   lightningInvoiceExpired:
-    "❌ La factura o dirección Lightning de cobro ya no es válida o expiró. Contacta a un administrador para resolver esta orden.",
+    "❌ La factura o dirección Lightning de cobro ya no es válida o expiró. Usa el comando /setaddress para actualizar la factura.",
   lightningPaymentFailed:
-    "❌ No se pudo completar la operación Lightning. Inténtalo de nuevo en unos minutos; si persiste, abre una disputa.",
+    "❌ No se pudo completar la operación Lightning. Inténtalo de nuevo en unos minutos; si persiste, usa el comando /setaddress para probar con otra factura.",
 
   // ─────────────────────────── Cancellations ───────────────────────────
   selectOrderToCancel:

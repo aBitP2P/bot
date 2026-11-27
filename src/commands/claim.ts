@@ -1,9 +1,6 @@
-import { getOrder, tryTransitionOrderStatus } from "../db/orders.js";
+import { getClaimableOrders, getOrder, tryTransitionOrderStatus } from "../db/orders.js";
 import type { BotContext, CallbackContext, CommandContext, OrderRecord } from "../types.js";
 import { getLiveMinerFee, checkEscrowFunding, DUST_LIMIT, findSpendingTxid } from "../core/bitcoin/index.js";
-import { orders } from "../db/schema.js";
-import { db } from "../db/index.js";
-import { and, eq, or } from "drizzle-orm";
 import { OrderStatus, SettlementMethodType } from "../shared/constants.js";
 import { buildOrderSelectKeyboard } from "../shared/keyboards.js";
 import { getParties } from "../utils/order.js";
@@ -22,27 +19,7 @@ export async function claimCommand(ctx: CommandContext) {
 
   const args = ctx.message.text.split(" ");
   if (args.length < 2) {
-    const claimableOrders = await db
-      .select()
-      .from(orders)
-      .where(
-        or(
-          and(
-            eq(orders.status, OrderStatus.Releasable),
-            or(
-              and(eq(orders.type, "SELL"), eq(orders.takerId, userId)),
-              and(eq(orders.type, "BUY"), eq(orders.creatorId, userId)),
-            ),
-          ),
-          and(
-            eq(orders.status, OrderStatus.Refundable),
-            or(
-              and(eq(orders.type, "SELL"), eq(orders.creatorId, userId)),
-              and(eq(orders.type, "BUY"), eq(orders.takerId, userId)),
-            ),
-          ),
-        ),
-      );
+    const claimableOrders = await getClaimableOrders(userId);
 
     if (claimableOrders.length === 0)
       await ctx.reply(dict.noClaimableOrdersFound, { parse_mode: "Markdown" });

@@ -288,6 +288,8 @@ export default {
     "The invoice must be for exactly `" +
     estimatedSats +
     "` sats.",
+  payoutDetailsUpdated: (orderId: string) =>
+    `✅ *Payout details updated.*\n\nYou can now claim the funds with \`/claim ${orderId}\``,
   waitMaker:
     "⏳ Perfect. Please, *wait for the counterparty to confirm* if they wish to proceed with the order.",
   waitTaker:
@@ -459,8 +461,10 @@ export default {
   // ─────────────────────────── Claim & Refund ───────────────────────────
   selectClaimableOrder:
     "👇 Select the order from which you want to claim the funds:",
+  selectAddressChangeableOrder:
+    "👇 Select the order whose payout address you want to modify:",
   noClaimableOrdersFound:
-    "📭 You have no orders ready to be claimed or refunded.",
+    "📭 You have no orders you can claim or change the payout address for.",
   showClaimPreview: (
     minerFee: number,
     finalAmount: number,
@@ -508,9 +512,9 @@ export default {
     "⏳ There is already an operation in progress for this order. Wait a few seconds and try again.",
   lightningAlreadyProcessed: "ℹ️ This order has already been processed.",
   lightningInvoiceExpired:
-    "❌ The Lightning payout invoice or address is no longer valid or has expired. Contact an administrator to resolve this order.",
+    "❌ The Lightning payout invoice or address is no longer valid or has expired. Use the /setaddress command to update the invoice.",
   lightningPaymentFailed:
-    "❌ The Lightning operation could not be completed. Try again in a few minutes; if it persists, open a dispute.",
+    "❌ The Lightning operation could not be completed. Try again in a few minutes; if it persists, use the /setaddress command to try a different invoice.",
 
   // ─────────────────────────── Cancellations ───────────────────────────
   selectOrderToCancel:

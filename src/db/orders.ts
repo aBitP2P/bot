@@ -59,6 +59,30 @@ export async function getUserOrders(
     );
 }
 
+export async function getClaimableOrders(userId: number) {
+  return await db
+    .select()
+    .from(orders)
+    .where(
+      or(
+        and(
+          eq(orders.status, OrderStatus.Releasable),
+          or(
+            and(eq(orders.type, "SELL"), eq(orders.takerId, userId)),
+            and(eq(orders.type, "BUY"), eq(orders.creatorId, userId)),
+          ),
+        ),
+        and(
+          eq(orders.status, OrderStatus.Refundable),
+          or(
+            and(eq(orders.type, "SELL"), eq(orders.creatorId, userId)),
+            and(eq(orders.type, "BUY"), eq(orders.takerId, userId)),
+          ),
+        ),
+      ),
+    );
+}
+
 // Diferente a getUserOrders, ya que solo retornará aquellas creadas por el usuario.
 export async function getOrdersCreatedBy(userId: number) {
   return await db
@@ -192,9 +216,12 @@ export async function setHodlInvoiceData(
 ) {
   const didUpdate = await tryConditionalUpdate(
     orderId,
-    and(eq(orders.settlementMethod, SettlementMethodType.Lightning), isNull(orders.holdInvoicePreimageEncrypted)),
+    and(
+      eq(orders.settlementMethod, SettlementMethodType.Lightning),
+      isNull(orders.holdInvoicePreimageEncrypted),
+    ),
     data,
-  ); // Se asegura de que no se vaya a cambiar la factura hold de una órden que ya tenga una establecida.
+  ); // Se asegura de que no se vaya a cambiar la factura hold de una orden que ya tenga una establecida.
   return didUpdate;
 }
 

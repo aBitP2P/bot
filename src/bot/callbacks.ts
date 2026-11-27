@@ -20,6 +20,7 @@ import { handleRating } from "../handlers/ratingHandler.js";
 import { OrderStatus } from "../shared/constants.js";
 import { notifyUser } from "../utils/telegram.js";
 import { resetFeeToDefault } from "../commands/setfee.js";
+import { handleAddressChange } from "../commands/setaddress.js";
 
 type Handler = (ctx: CallbackContext, arg: string) => unknown;
 
@@ -67,6 +68,7 @@ const routes: Array<[string, Handler]> = [
   ],
   ["cancelRelease", (ctx) => ctx.editMessageText(ctx.dict.cancelled)],
   ["claimCommand_", (ctx, id) => initiateClaim(ctx, id)],
+  ["setAddressCommand_", (ctx, id) => handleAddressChange(ctx, id)],
   ["setfee_default", (ctx) => resetFeeToDefault(ctx)],
   ["maker_deny_", (ctx, id) => makerDeny(ctx, id)],
   ["rate_", (ctx, arg) => rate(ctx, arg)],

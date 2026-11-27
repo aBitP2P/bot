@@ -91,7 +91,8 @@ export function registerTextHandler(bot: Telegraf<BotContext>) {
       if (
         !order ||
         (order.status !== OrderStatus.WaitingTakerConfirmation &&
-          order.status !== OrderStatus.WaitingMakerConfirmation)
+          order.status !== OrderStatus.WaitingMakerConfirmation &&
+          order.status !== OrderStatus.Releasable)
       ) {
         ctx.session.awaitingAddressForOrder = undefined;
         return next();
@@ -141,6 +142,14 @@ export function registerTextHandler(bot: Telegraf<BotContext>) {
       ctx.session.awaitingAddressForOrder = undefined;
 
       const dict = ctx.dict;
+
+      if (order.status === OrderStatus.Releasable) {
+        // Actualización post-release (p. ej. factura expirada): no hay
+        // transición de estado ni de escrow.
+        return ctx.reply(dict.payoutDetailsUpdated(order.id), {
+          parse_mode: "Markdown",
+        });
+      }
 
       if (order.status === OrderStatus.WaitingTakerConfirmation) {
         await ctx.reply(dict.waitMaker, { parse_mode: "Markdown" });

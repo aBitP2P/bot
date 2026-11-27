@@ -430,7 +430,7 @@ async function publishOrderToChannel(ctx: BotContext, lang: Language) {
     {
       id: orderId,
       type: type!,
-      settlementMethod: getSettlementMethodLabel(settlementMethod),
+      settlementMethod: settlementMethod ?? SettlementMethodType.OnChain,
       fiatCode: fiat!,
       amountFiat: amount!,
       paymentMethod: paymentMethod!,

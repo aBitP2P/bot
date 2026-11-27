@@ -1,5 +1,5 @@
 export const FEE_TIERS = [
-  { maxSats: 100_000, feePercent: 0 },  
+  { maxSats: 100_000, feePercent: 0.6 },  
   { maxSats: Infinity, feePercent: 0.6 }
 ];
 

@@ -6,7 +6,6 @@ import {
   formatConfirmations,
 } from "../shared/constants.js";
 import { mempoolBaseURL, type MempoolFeesData } from "../core/bitcoin/index.js";
-import { MIN_SATS } from "../utils/price.js";
 
 type OrderRow = typeof orders.$inferSelect;
 
@@ -85,17 +84,19 @@ export default {
   invalidAmountAfterMargin: ({
     margin,
     satsAmount,
+    minSats,
     minFiatRequired,
     fiatCode,
   }: {
     margin: number;
     satsAmount: number;
+    minSats: number;
     minFiatRequired: string;
     fiatCode: string;
   }) =>
     `⚠️ *Valor insuficiente após aplicar a margem*\n\n` +
     `Após aplicar sua margem de ${margin}%, o total a receber caiu para ${satsAmount.toLocaleString()} sats.\n\n` +
-    `Para cumprir o mínimo de ${MIN_SATS.toLocaleString()} sats, você precisa iniciar a ordem com pelo menos *$${minFiatRequired} ${fiatCode}*.\n\n` +
+    `Para cumprir o mínimo de ${minSats.toLocaleString()} sats, você precisa iniciar a ordem com pelo menos *$${minFiatRequired} ${fiatCode}*.\n\n` +
     `🔄 Inicie novamente a criação da ordem.`,
   lightningAmountAboveMaximum: (
     fiatCode: string,

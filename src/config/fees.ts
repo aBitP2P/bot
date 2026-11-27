@@ -1,15 +1,8 @@
-export const FEE_TIERS = [
-  { maxSats: 100_000, feePercent: 0.6 },  
-  { maxSats: Infinity, feePercent: 0.6 }
-];
+/** Comisión del bot, plana para cualquier monto (porcentaje sobre el monto). */
+export const BOT_FEE_PERCENT = 0.6;
 
-export function getBotFeePercent(satsAmount: number): number {
-  for (const tier of FEE_TIERS) {
-    if (satsAmount < tier.maxSats) {
-      return tier.feePercent;
-    }
-  }
-  return 0.6;
+export function getBotFeePercent(_satsAmount: number): number {
+  return BOT_FEE_PERCENT;
 }
 
 /** Comisión total del bot (ambas partes) en sats. */

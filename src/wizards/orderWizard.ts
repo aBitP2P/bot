@@ -7,9 +7,9 @@ import { buildMarginKeyboard } from "../shared/keyboards.js";
 import {
   getMinFiatAmount,
   getMaxLightningFiatAmount,
+  getMinSats,
   getRateInfoFor,
   LIGHTNING_MAX_SATS,
-  MIN_SATS,
   ratesCache,
 } from "../utils/price.js";
 import { generateOrderId } from "../utils/crypto.js";
@@ -234,7 +234,10 @@ export async function handleWizardInput(ctx: BotContext): Promise<boolean> {
         return true;
       }
 
-      const minFiatValue = getMinFiatAmount(appliedRate);
+      const minFiatValue = getMinFiatAmount(
+        appliedRate,
+        ctx.session.draft.settlementMethod,
+      );
       if (min < minFiatValue) {
         await updatePreview(
           "WAITING_AMOUNT",
@@ -350,14 +353,16 @@ export async function handleWizardAction(ctx: BotContext) {
       margin,
     );
 
-    if (satsAmount < MIN_SATS) {
-      const minFiatRequired = (MIN_SATS / 100_000_000) * appliedRate;
+    const minSats = getMinSats(ctx.session.draft.settlementMethod);
+    if (satsAmount < minSats) {
+      const minFiatRequired = (minSats / 100_000_000) * appliedRate;
       await safeRemoveMarkup(ctx);
       await ctx.reply(
         ctx.dict.invalidAmountAfterMargin({
           margin,
           minFiatRequired: formatFiatAmount(minFiatRequired),
           satsAmount,
+          minSats,
           fiatCode: fiat!,
         }),
         { parse_mode: "Markdown" },

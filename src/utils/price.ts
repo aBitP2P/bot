@@ -1,6 +1,18 @@
+import { SettlementMethodType } from "../shared/constants.js";
+
 export const ratesCache = new Map<string, { rate: number; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 1000;
-export const MIN_SATS = 2000;
+/** Mínimo de sats para órdenes con liquidación Lightning. */
+export const MIN_SATS = 1000;
+/** Mínimo de sats para órdenes on-chain. */
+export const ONCHAIN_MIN_SATS = 100_000;
+
+/** Mínimo de sats según el método de liquidación (on-chain por defecto). */
+export function getMinSats(settlementMethod?: string): number {
+  return settlementMethod === SettlementMethodType.Lightning
+    ? MIN_SATS
+    : ONCHAIN_MIN_SATS;
+}
 /**
  * Máximo de sats permitido para órdenes con liquidación Lightning.
  * Si no está definido (o es 0), no se aplica límite.
@@ -50,8 +62,12 @@ export async function getRateInfoFor(
   }
 }
 
-export function getMinFiatAmount(btcPrice: number): number {
-  const minBtc = MIN_SATS / 100_000_000;
+export function getMinFiatAmount(
+  btcPrice: number,
+  settlementMethod?: string,
+): number {
+  const minSats = getMinSats(settlementMethod);
+  const minBtc = minSats / 100_000_000;
   const minFiat = minBtc * btcPrice;
 
   return Number(minFiat.toFixed(2));

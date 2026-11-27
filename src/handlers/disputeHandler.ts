@@ -14,7 +14,11 @@ import { buildSettleDisputeKeyboard } from "../shared/keyboards.js";
 import { escapeMarkdown, formatFiatAmount } from "../utils/format.js";
 import { getParties } from "../utils/order.js";
 import { notifyUser, safeRemoveMarkup } from "../utils/telegram.js";
-import { OrderStatus } from "../shared/constants.js";
+import {
+  OrderStatus,
+  SettlementMethodType,
+  getSettlementMethodLabel,
+} from "../shared/constants.js";
 
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID;
 
@@ -91,6 +95,11 @@ export async function openDispute(ctx: CommandContext, orderId: string) {
       fiatCode: order.fiatCode,
       amountFiat: formatFiatAmount(order.fiatAmountLocked!),
       status: previousStatus,
+      network: getSettlementMethodLabel(order.settlementMethod),
+      holdInvoice:
+        order.settlementMethod === SettlementMethodType.Lightning
+          ? (order.holdInvoiceHash ?? undefined)
+          : undefined,
       escrowAddress: order.escrowAddress || "N/A",
       buyerUsername: escapeMarkdown(buyer!.username),
       sellerUsername: escapeMarkdown(seller!.username),

@@ -558,6 +558,8 @@ export default {
     fiatCode,
     amountFiat,
     status,
+    network,
+    holdInvoice,
     escrowAddress,
     buyerUsername,
     sellerUsername,
@@ -569,6 +571,8 @@ export default {
     fiatCode: string;
     amountFiat: string;
     status: string;
+    network: string;
+    holdInvoice?: string | undefined;
     escrowAddress: string;
     buyerUsername: string;
     sellerUsername: string;
@@ -578,9 +582,12 @@ export default {
     `⚖️ *NOVA DISPUTA*\n\n` +
     `Ordem: \`${orderId}\`\n` +
     `Tipo: ${type}\n` +
+    `Rede: ${network}\n` +
     `Valor: ${amountFiat} ${fiatCode}\n` +
     `Status anterior: \`${status}\`\n` +
-    `Escrow: \`${escrowAddress}\`\n\n` +
+    (holdInvoice
+      ? `Fatura de retenção: \`${holdInvoice}\`\n\n`
+      : `Escrow: \`${escrowAddress}\`\n\n`) +
     `👤 Comprador: @${buyerUsername}\n` +
     `👤 Vendedor: @${sellerUsername}\n\n` +
     `🔑 Código de verificação do comprador: \`${buyerCode}\`\n` +

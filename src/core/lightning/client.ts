@@ -1,4 +1,9 @@
 import { authenticatedLndGrpc, getWalletInfo } from "lightning";
+import { validateEnv } from "../../config/validateEnv.js";
+
+// Falla al arrancar si faltan las credenciales de LND, antes de crear el
+// cliente gRPC (de lo contrario el error sería críptico o tardío).
+validateEnv();
 
 export const { lnd } = authenticatedLndGrpc({
   cert: process.env.LND_CERT!,

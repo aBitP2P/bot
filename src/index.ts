@@ -14,6 +14,11 @@ import { registerCallbacks } from "./bot/callbacks.js";
 import { registerClaimActions } from "./bot/claimActions.js";
 import { registerTextHandler } from "./bot/textHandler.js";
 import { testLndConnection } from "./core/lightning/client.js";
+import { validateEnv } from "./config/validateEnv.js";
+
+// Falla al arrancar si faltan variables requeridas (también se valida en
+// lightning/client.ts, antes de construir el cliente gRPC).
+validateEnv();
 
 const bot = new Telegraf<BotContext>(process.env.BOT_TOKEN!);
 
